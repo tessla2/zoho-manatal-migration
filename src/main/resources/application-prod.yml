@@ -1,0 +1,53 @@
+# ─────────────────────────────────────────────────────────────
+# PERFIL: prod
+# Ativar com: --spring.profiles.active=prod
+# Ou variável de ambiente: SPRING_PROFILES_ACTIVE=prod
+#
+# OBRIGATÓRIO definir antes de correr:
+#   ZOHO_TOKEN, MANATAL_TOKEN,
+#   DB_URL, DB_USER, DB_PASSWORD,
+#   SLACK_WEBHOOK_URL ou ALERT_EMAIL_TO
+# ─────────────────────────────────────────────────────────────
+
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/migration}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      connection-timeout: 30000
+
+  h2:
+    console:
+      enabled: false  # deactivated in prod for safety
+
+migration:
+  zoho:
+    page-size: 200    # max in prod
+
+  manatal:
+    rate-limit-ms: 300
+
+  batch:
+    chunk-size: 50
+    retry-limit: 3
+    skip-limit: 100   # 100 fails
+
+  alerts:
+    enabled: true     # alerts on in prod
+
+# Logs de audit em prod — just INFO, no sensitive data
+logging:
+  level:
+    com.migration: INFO
+    org.springframework.batch: INFO
+    org.springframework.web.client: WARN
+  file:
+    name: logs/migration.log
+    max-size: 50MB
+    max-history: 30
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} %-5level [%thread] %logger{36} - %msg%n"
+    file:    "%d{yyyy-MM-dd HH:mm:ss} %-5level [%thread] %logger{36} - %msg%n"

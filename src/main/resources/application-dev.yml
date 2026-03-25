@@ -1,0 +1,35 @@
+# ─────────────────────────────────────────────────────────────
+# Profile: dev
+# Activate with: --spring.profiles.active=dev
+# Or ambient variable: SPRING_PROFILES_ACTIVE=dev
+# ─────────────────────────────────────────────────────────────
+
+migration:
+  zoho:
+    token: ${ZOHO_TOKEN:dev-fake-token}
+    date-start: ${MIGRATION_DATE_START:2024-01-01}
+    date-end: ${MIGRATION_DATE_END:2024-03-31}   # short range in dev
+    page-size: 10                                   # small pages em dev
+
+
+  manatal:
+    rate-limit-ms: 100
+
+
+  batch:
+    chunk-size: 5         # small chunks in dev
+    retry-limit: 1         # fewer retries in dev
+    skip-limit: 999         # allow all skips in dev
+
+  alerts:
+    enabled: false
+
+logging:
+  level:
+    com.migration: DEBUG
+    org.springframework.batch: DEBUG
+    org.springframework.web.client: DEBUG           #requests/responses HTTP
+  file:
+    name: logs/migration-dev.log
+  pattern:
+    console: "%d{HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"

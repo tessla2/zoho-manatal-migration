@@ -1,0 +1,64 @@
+spring:
+  application:
+    name: zoho-manatal-migration
+
+    # DB H2 to save state data from Spring Batch
+    datasource:
+        url: jdbc:h2:file:./migration-state;DB_CLOSE_ON_EXIT=FALSE
+        driver-class-name: com.mysql.cj.jdbc.Driver
+        username: sa
+        password:
+
+    h2:
+      console:
+        enabled: true            # http://localhost:8080/h2-console
+        path: /h2-console
+
+    batch:
+      job:
+        enabled: false              # Disable auto-run of jobs on startup
+      jdbc:
+        initialize-schema: always   # Initialize Spring Batch schema on startup
+
+
+migration:
+  zoho:
+    token: ${ZOHO_TOKEN}
+    base-url: https://www.zohoapis.com/recruit/v2
+    date-start: ${MIGRATION_DATE_START:2026-04-01}
+    date-end:   ${MIGRATION_DATE_END:2026-06-30}   # range of 3 months to avoid timeouts
+    page-size: 200
+
+  manatal:
+    token:  ${MANATAL_TOKEN}
+    base-url: https://api.manatal.com/open/v3
+    rate-limit-ms: 3000     # Time to wait between API calls to respect rate limits
+
+  batch:
+    chunk-size: 50         # Number of records to process in each batch chunk (50 candidates per chunk)
+    retry-limit: 3         # Number of retry attempts for failed API calls
+    skip-limit: 100         # Maximum number of records to skip before failing the job
+
+  alerts:
+    enabled: ${ALERTS_ENABLED:false}
+    slack-webhook: ${SLACK_WEBHOOK_URL:}
+    email:
+      to: ${ALERT_EMAIL_TO:}
+      from: ${ALERT_EMAIL_FROM:migration@company.com}
+
+    # Actuator — dashboard progress
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: health,info,batch
+      endpoint:
+        health:
+          show-details: always
+
+    logging:
+      level:
+        com.migration: DEBUG
+        org.springframework.batch: INFO
+      file:
+        name: logs/migration.log
