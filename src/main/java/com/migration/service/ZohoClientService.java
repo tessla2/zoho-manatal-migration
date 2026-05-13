@@ -25,8 +25,10 @@ public class ZohoClientService {
             String token = authService.generateAccessToken();
 
             String url =
-                    properties.apiUrl() +
-                            "/recruit/v2/Candidates?page=1&per_page=1";
+                    properties.baseUrl() +
+                            "/Candidates?page=1&per_page=10";
+
+            log.info("Chamando URL: {}", url);
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -38,6 +40,17 @@ public class ZohoClientService {
 
             HttpResponse<String> response =
                     client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            log.info("Status code: {}", response.statusCode());
+            log.info("Headers:");
+            response.headers().map().forEach((key, values) ->
+                log.info("  {}: {}", key, String.join(", ", values))
+            );
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                log.error("Resposta não esperada da API Zoho. Status: {}, Body: {}", response.statusCode(), response.body());
+                throw new RuntimeException("Zoho API retornou status " + response.statusCode());
+            }
 
             return response.body();
         } catch (Exception e) {

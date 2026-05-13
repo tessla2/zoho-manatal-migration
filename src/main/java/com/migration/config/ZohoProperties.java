@@ -3,9 +3,19 @@ package com.migration.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "migration.zoho")
 public record ZohoProperties(
-        String clientId,
-        String clientSecret,
-        String refreshToken,
-        String accountsUrl,
-        String apiUrl
-) {}
+
+        OAuth oauth,
+        String baseUrl
+
+) {
+
+    public record OAuth(
+
+            String clientId,
+            String clientSecret,
+            String refreshToken,
+            String tokenUrl
+
+    ) {
+    }
+}
