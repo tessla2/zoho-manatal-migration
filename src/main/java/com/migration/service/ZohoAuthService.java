@@ -28,32 +28,14 @@ public class ZohoAuthService {
         // Pega a URL base configurada nas propriedades
         String url = properties.oauth().tokenUrl();
 
-        // Verifica se a URL existe
-        // Se estiver vazia ou null, lança erro
         if (url == null || url.isBlank()) {
             throw new IllegalArgumentException("accountsUrl não pode ser vazio");
         }
 
         // Remove "/" no final da URL
-        // Exemplo:
-        // https://site.com/
-        // vira:
-        // https://site.com
-        //
-        // Isso evita URL com "//"
         url = url.replaceAll("/+$", "");
 
         // Monta o corpo da requisição HTTP
-        // Esse formato é usado em requests "x-www-form-urlencoded"
-        //
-        // Exemplo final:
-        // refresh_token=abc123
-        // &client_id=meuClient
-        // &client_secret=senha
-        // &grant_type=refresh_token
-        //
-        // URLEncoder.encode serve para escapar caracteres especiais
-        // como espaços, +, &, etc
         String body =
                 "refresh_token=" + URLEncoder.encode(
                         properties.oauth().refreshToken(),
@@ -87,7 +69,6 @@ public class ZohoAuthService {
 
         // Envia a requisição para o servidor
         // e espera a resposta
-        //
         // BodyHandlers.ofString():
         // transforma a resposta em String
         HttpResponse<String> response =
@@ -99,9 +80,6 @@ public class ZohoAuthService {
         log.info("Token response status: {}", response.statusCode());
 
         if (response.statusCode() != 200) {
-
-            // Se não veio 200,
-            // lança erro mostrando status e body
             throw new RuntimeException(
                     "Erro ao gerar token. Status: "
                             + response.statusCode()
@@ -111,27 +89,17 @@ public class ZohoAuthService {
         }
 
         // Converte o JSON da resposta em objeto JsonNode
-        //
-        // Exemplo de resposta:
-        // {
-        //   "access_token": "abc123"
-        // }
-        JsonNode json = mapper.readTree(response.body());
+        JsonNode json = mapper.readTree(response.body()); //jsonNode é um objeto que representa o JSON da resposta em Tree Model.
 
         // Procura o campo "access_token" dentro do JSON
         JsonNode accessTokenNode = json.get("access_token");
 
-        // Verifica se o campo existe
         if (accessTokenNode == null || accessTokenNode.isNull()) {
-
-            // Se não existir, lança erro
             throw new RuntimeException(
                     "access_token não encontrado na resposta: "
                             + response.body()
             );
         }
-
-        // Retorna o token como String
         return accessTokenNode.asText();
     }
 }
