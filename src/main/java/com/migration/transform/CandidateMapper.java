@@ -2,23 +2,29 @@ package com.migration.transform;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.migration.model.ManatalCandidate;
+import com.migration.transform.utils.ParseUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Component
+@RequiredArgsConstructor
 public class CandidateMapper {
+
+    private final ParseUtils utils;
+
 
     public ManatalCandidate toManatal(JsonNode zoho) {
         ManatalCandidate c = new ManatalCandidate();
 
-        c.setName(field(zoho, "Full_Name"));
+        c.setFull_name(field(zoho, "Full_Name"));
         c.setEmail(field(zoho, "Email"));
-        c.setPhonenumber(field(zoho, "Phone"));
-        c.setLinkedin(field(zoho, "LinkedIn__s"));
+        c.setPhone_number(field(zoho, "Phone"));
         c.setCountry(field(zoho, "Country"));
-        c.setNationalities(firstFromArray(zoho, "Nationalities"));
 
         Integer expYears = intField(zoho, "Experience_in_Years");
         c.setYearofexperience(expYears);
@@ -26,8 +32,11 @@ public class CandidateMapper {
         c.setAvailability(intField(zoho, "Availability_Days"));
         c.setNumber_of_dependents(intField(zoho, "Number_of_Dependants"));
         c.setConsent_to_rgpd_(field(zoho, "Consent_to_RGPD"));
-        c.setCcurrency(field(zoho, "Currency"));
-        c.setEcurrency(field(zoho, "Currency"));
+        String currency = field(zoho, "Currency");
+        c.setCcurrency(currency != null ? currency : "EUR");
+        c.setEcurrency(currency != null ? currency : "EUR");
+
+        c.setWorktype("permanent");
 
         c.setCreator(ownerName(zoho, "Candidate_Owner"));
         c.setOwner(ownerName(zoho, "Candidate_Owner"));
@@ -35,11 +44,43 @@ public class CandidateMapper {
         String desc = buildDescription(zoho);
         c.setDescription(desc);
 
-        c.setSkills(parseSkills(zoho));
+        String linkedinRaw = field(zoho, "LinkedIn__s");
+        c.setLinkedin(utils.normalizeLinkedin(linkedinRaw));
+
+        List<String> rawSkills = utils.parseSkills(zoho);
+        c.setSkills(rawSkills);
 
         c.setNote(buildNotes(zoho));
 
+        Map<String, Object> customFields = buildCustomFields(c);
+
+        Integer currentSalary = parseSalaryField(zoho, "current_salary");
+        if (currentSalary != null) customFields.put("csalary", currentSalary);
+
+        Integer expectedSalary = parseSalaryField(zoho, "expected_salary");
+        if (expectedSalary != null) customFields.put("esalary", expectedSalary);
+
+        String additionalInfo = field(zoho, "additional_info");
+        if (additionalInfo != null) customFields.put("additional_info", additionalInfo);
+
+        c.setCustom_fields(customFields);
+
         return c;
+    }
+
+    private Map<String, Object> buildCustomFields(ManatalCandidate c) {
+        Map<String, Object> fields = new HashMap<>();
+        if (c.getCountry() != null) fields.put("country", c.getCountry());
+        if (c.getLinkedin() != null) fields.put("linkedin", c.getLinkedin());
+        if (c.getSkills() != null && !c.getSkills().isEmpty()) fields.put("skills", c.getSkills());
+        if (c.getWorktype() != null) fields.put("worktype", c.getWorktype());
+        if (c.getCcurrency() != null) fields.put("ccurrency", c.getCcurrency());
+        if (c.getEcurrency() != null) fields.put("ecurrency", c.getEcurrency());
+        if (c.getYearofexperience() != null) fields.put("yearofexperience", c.getYearofexperience());
+        if (c.getAvailability() != null) fields.put("availability", c.getAvailability());
+        if (c.getNumber_of_dependents() != null) fields.put("number_of_dependents", c.getNumber_of_dependents());
+        if (c.getConsent_to_rgpd_() != null) fields.put("consent_to_rgpd_", c.getConsent_to_rgpd_());
+        return fields.isEmpty() ? null : fields;
     }
 
     private String field(JsonNode node, String name) {
@@ -53,20 +94,17 @@ public class CandidateMapper {
         return f.isInt() ? f.asInt() : null;
     }
 
-    private String firstFromArray(JsonNode node, String name) {
-        JsonNode arr = node.get(name);
-        if (arr != null && arr.isArray() && arr.size() > 0) {
-            JsonNode first = arr.get(0);
-            return first.isTextual() ? first.asText() : null;
-        }
-        return null;
+
+    private Integer parseSalaryField(JsonNode node, String name) {
+        String raw = field(node, name);
+        return raw != null ? utils.parseSalary(raw) : null;
     }
 
-    private String ownerName(JsonNode node, String name) {
+    private Integer ownerName(JsonNode node, String name) {
         JsonNode obj = node.get(name);
         if (obj != null && obj.isObject()) {
-            JsonNode n = obj.get("name");
-            return n != null ? n.asText() : null;
+            JsonNode id = obj.get("id");
+            if (id != null && id.isInt()) return id.asInt();
         }
         return null;
     }
@@ -81,25 +119,6 @@ public class CandidateMapper {
             sb.append("Salary: ").append(salary);
         }
         return sb.isEmpty() ? null : sb.toString();
-    }
-
-    private List<String> parseSkills(JsonNode node) {
-        JsonNode stacks = node.get("Stacks_LinkedIn");
-        if (stacks != null && !stacks.isNull()) {
-            List<String> list = new ArrayList<>();
-            for (String line : stacks.asText().split("\\r?\\n")) {
-                String trimmed = line.trim();
-                if (!trimmed.isEmpty()) list.add(trimmed);
-            }
-            return list;
-        }
-        JsonNode skills = node.get("Skills");
-        if (skills != null && skills.isArray()) {
-            List<String> list = new ArrayList<>();
-            skills.forEach(s -> list.add(s.asText()));
-            return list;
-        }
-        return null;
     }
 
     private List<ManatalCandidate.ManatalNote> buildNotes(JsonNode node) {

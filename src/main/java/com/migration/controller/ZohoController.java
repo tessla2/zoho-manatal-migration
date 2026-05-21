@@ -17,9 +17,10 @@ public class ZohoController {
 
     private final ZohoClientService zohoClientService;
 
+    //Candidates
     @GetMapping("/candidates")
     public ResponseEntity<String> getCandidates() {
-        String response = zohoClientService.fetchOneCandidate();
+        String  response = zohoClientService.fetchOneCandidate();
         return ResponseEntity.ok(response);
     }
 
@@ -35,9 +36,11 @@ public class ZohoController {
         return ResponseEntity.ok(response);
     }
 
+
+    //Attachments
     @GetMapping("/candidates/{candidateId}/attachments")
-    public ResponseEntity<String> listAttachments(@PathVariable String candidateId) {
-        String response = zohoClientService.listAttachments(candidateId);
+    public ResponseEntity<String> listCandidateAttachments(@PathVariable String candidateId) {
+        String response = zohoClientService.listCandidateAttachments(candidateId);
         return ResponseEntity.ok(response);
     }
 
@@ -65,4 +68,25 @@ public class ZohoController {
         }
         return ResponseEntity.ok("Anexo salvo no PostgreSQL. ID: " + id);
     }
+
+    //Interviews
+    @GetMapping("/interviews")
+    public ResponseEntity<String> fetchOneInterview() {
+        String response = zohoClientService.fetchOneInterview();
+        return ResponseEntity.ok(response);
+    }
+
+    //Applications
+    @GetMapping("/applications")
+    public ResponseEntity<String> fetchOneApplication() {
+        String response = zohoClientService.fetchOneApplication();
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/applications/{applicationId}/attachments")
+    public ResponseEntity<String> listApplicationAttachments(@PathVariable String applicationId) {
+        String response = zohoClientService.listApplicationAttachments(applicationId);
+        return ResponseEntity.ok(response);
+    }
+
 }
