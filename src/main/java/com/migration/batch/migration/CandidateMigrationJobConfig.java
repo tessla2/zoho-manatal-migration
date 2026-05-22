@@ -26,6 +26,8 @@ import java.util.Map;
 @Slf4j
 @Configuration
 @RequiredArgsConstructor
+
+// Configuração do Job de migração de candidatos, definindo os passos e componentes necessários para a execução do processo de migração
 public class CandidateMigrationJobConfig {
 
     private final JobRepository jobRepository;
@@ -34,6 +36,7 @@ public class CandidateMigrationJobConfig {
     private final LoadCandidatesTasklet loadCandidatesTasklet;
     private final CandidateMigrationProcessor processor;
     private final CandidateMigrationWriter writer;
+    private final TagZohoTasklet tagZohoTasklet;
 
     @Value("${migration.batch.chunk-size:1}")
     private int chunkSize;
@@ -44,6 +47,7 @@ public class CandidateMigrationJobConfig {
                 .incrementer(new RunIdIncrementer())
                 .start(loadCandidatesStep())
                 .next(migrateCandidateStep())
+                .next(tagZohoStep())
                 .build();
     }
 
@@ -51,6 +55,13 @@ public class CandidateMigrationJobConfig {
     public Step loadCandidatesStep() {
         return new StepBuilder("loadCandidatesStep", jobRepository)
                 .tasklet(loadCandidatesTasklet, transactionManager)
+                .build();
+    }
+
+    @Bean
+    public Step tagZohoStep() {
+        return new StepBuilder("tagZohoStep", jobRepository)
+                .tasklet(tagZohoTasklet, transactionManager)
                 .build();
     }
 

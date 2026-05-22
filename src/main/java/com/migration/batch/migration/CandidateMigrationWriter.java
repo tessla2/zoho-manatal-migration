@@ -1,13 +1,20 @@
 package com.migration.batch.migration;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migration.entity.CandidateMigration;
+import com.migration.model.ManatalAttachment;
+import com.migration.model.ManatalResume;
 import com.migration.repository.CandidateMigrationRepository;
+import com.migration.service.FileStorageService;
 import com.migration.service.ManatalClientService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemWriter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 @Slf4j
 @Component
@@ -16,6 +23,12 @@ public class CandidateMigrationWriter implements ItemWriter<CandidateMigrationPa
 
     private final ManatalClientService manatalClientService;
     private final CandidateMigrationRepository repository;
+    private final FileStorageService fileStorageService;
+
+    @Value("${migration.app.base-url}")
+    private String appBaseUrl;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     public void write(Chunk<? extends CandidateMigrationPackage> chunk) {
@@ -33,6 +46,13 @@ public class CandidateMigrationWriter implements ItemWriter<CandidateMigrationPa
                 String manatalResponse = manatalClientService.createCandidate(pkg.getTransformed());
                 log.info("Candidate {} migrated to Manatal: {}", pkg.getZohoCandidateId(), manatalResponse);
 
+                String manatalId = objectMapper.readTree(manatalResponse).path("id").asText();
+                entity.setManatalCandidateId(manatalId);
+
+                postNotes(manatalId, pkg.getZohoNotes(), pkg.getNoteInfo());
+                postSocialMedia(manatalId, pkg.getLinkedinUrl());
+                postAttachments(manatalId, pkg.getStoredAttachmentIds());
+
                 entity.setStatus("SUCESSO");
                 repository.save(entity);
             } catch (Exception e) {
@@ -42,5 +62,74 @@ public class CandidateMigrationWriter implements ItemWriter<CandidateMigrationPa
                 repository.save(entity);
             }
         }
+    }
+
+    private void postSocialMedia(String manatalCandidateId, String linkedinUrl) {
+        if (linkedinUrl == null || linkedinUrl.isBlank()) return;
+        try {
+            manatalClientService.createSocialMedia(manatalCandidateId, "linkedin", linkedinUrl);
+            log.info("LinkedIn posted for candidate {}", manatalCandidateId);
+        } catch (Exception e) {
+            log.warn("Failed to post LinkedIn for candidate {}: {}", manatalCandidateId, e.getMessage());
+        }
+    }
+
+    private void postAttachments(String manatalCandidateId, List<Long> storedAttachmentIds) {
+        if (storedAttachmentIds == null || storedAttachmentIds.isEmpty()) return;
+
+        boolean resumePosted = false;
+
+        for (Long attachmentId : storedAttachmentIds) {
+            try {
+                String fileName = fileStorageService.getFileName(attachmentId);
+                String contentType = fileStorageService.getContentType(attachmentId);
+                String fileUrl = appBaseUrl.replaceAll("/+$", "") + "/api/files/" + attachmentId;
+
+                if (!resumePosted && isResumeFile(fileName, contentType)) {
+                    ManatalResume resume = new ManatalResume();
+                    resume.setResume_file(fileUrl);
+                    manatalClientService.updateResume(manatalCandidateId, resume);
+                    resumePosted = true;
+                    log.info("Resume posted for candidate {}: {}", manatalCandidateId, fileName);
+                }
+
+                ManatalAttachment attachment = new ManatalAttachment();
+                attachment.setName(fileName);
+                attachment.setDescription("Migrated from Zoho");
+                attachment.setFile(fileUrl);
+
+                manatalClientService.createAttachment(manatalCandidateId, attachment);
+                log.info("Attachment posted for candidate {}: {}", manatalCandidateId, fileName);
+            } catch (Exception e) {
+                log.warn("Failed to post attachment {} for candidate {}: {}", attachmentId, manatalCandidateId, e.getMessage());
+            }
+        }
+    }
+
+    private void postNotes(String manatalCandidateId, List<String> zohoNotes, String fallbackNote) {
+        List<String> notes = (zohoNotes != null && !zohoNotes.isEmpty()) ? zohoNotes : null;
+        if (notes == null) {
+            if (fallbackNote != null && !fallbackNote.isBlank()) {
+                notes = List.of(fallbackNote);
+            } else {
+                return;
+            }
+        }
+        for (String note : notes) {
+            try {
+                manatalClientService.createNote(manatalCandidateId, note);
+                log.info("Note posted for candidate {}", manatalCandidateId);
+            } catch (Exception e) {
+                log.warn("Failed to post note for candidate {}: {}", manatalCandidateId, e.getMessage());
+            }
+        }
+    }
+
+    private boolean isResumeFile(String fileName, String contentType) {
+        if (fileName == null) return false;
+        String lower = fileName.toLowerCase();
+        return lower.endsWith(".pdf") || lower.endsWith(".doc") || lower.endsWith(".docx")
+                || lower.endsWith(".rtf") || lower.endsWith(".txt")
+                || contentType.contains("pdf") || contentType.contains("document");
     }
 }

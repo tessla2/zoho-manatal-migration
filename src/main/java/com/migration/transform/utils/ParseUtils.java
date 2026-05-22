@@ -31,8 +31,10 @@ public class ParseUtils {
         JsonNode stacks = node.get("Stacks_LinkedIn");
         if (stacks != null && !stacks.isNull()) {
             List<String> list = new ArrayList<>();
-            for (String line : stacks.asText().split("\\r?\\n")) {
-                String trimmed = line.trim();
+            String raw = stacks.asText();
+            String[] parts = raw.contains("\n") ? raw.split("\\r?\\n") : raw.split(",");
+            for (String part : parts) {
+                String trimmed = part.trim();
                 if (!trimmed.isEmpty()) list.add(trimmed);
             }
             return list;

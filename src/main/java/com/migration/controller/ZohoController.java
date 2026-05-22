@@ -89,4 +89,15 @@ public class ZohoController {
         return ResponseEntity.ok(response);
     }
 
+    // Tags //
+    @GetMapping("/tags")
+    public ResponseEntity<?> listTags(@RequestParam(defaultValue = "Candidates") String module) {
+        try {
+            String response = zohoClientService.listTags(module);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Erro: " + e.getMessage());
+        }
+    }
+
 }

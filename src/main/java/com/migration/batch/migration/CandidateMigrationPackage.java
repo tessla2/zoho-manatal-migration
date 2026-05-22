@@ -15,5 +15,8 @@ public class CandidateMigrationPackage {
     private Long manatalCandidateId;
     private String applicationId;
     private List<Long> storedAttachmentIds;
+    private String noteInfo;
+    private List<String> zohoNotes;
+    private String linkedinUrl;
     private String errorMessage;
 }

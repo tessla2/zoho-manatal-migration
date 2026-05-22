@@ -5,7 +5,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record ZohoProperties(
 
         OAuth oauth,
-        String baseUrl
+        String baseUrl,
+        String tagName
 
 ) {
 

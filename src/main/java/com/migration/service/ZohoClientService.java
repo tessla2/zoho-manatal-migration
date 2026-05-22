@@ -292,6 +292,107 @@ public class ZohoClientService {
 
     }
 
+    // Tags //
+    public String listTags(String module) {
+        try {
+            String token = authService.generateAccessToken();
+            String url = properties.baseUrl() + "/settings/tags?module=" + module;
+
+            log.info("Fetching tags for module {}: {}", module, url);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Zoho-oauthtoken " + token)
+                    .GET()
+                    .build();
+
+            HttpClient client = HttpClient.newHttpClient();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            log.info("List tags status: {}", response.statusCode());
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                log.error("Erro ao listar tags. Status: {}, Body: {}", response.statusCode(), response.body());
+                throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode() + " ao listar tags");
+            }
+
+            return response.body();
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Erro ao listar tags: {}", e.getMessage(), e);
+            throw ApiException.badGateway("Falha ao listar tags no Zoho");
+        }
+    }
+
+    public void tagCandidate(String candidateId) {
+        try {
+            String token = authService.generateAccessToken();
+            String tagName = properties.tagName();
+            String url = properties.baseUrl() + "/Candidates/" + candidateId + "/actions/add_tags?tag_names="
+                    + java.net.URLEncoder.encode(tagName, java.nio.charset.StandardCharsets.UTF_8);
+
+            log.info("Tagging candidate {} with tag '{}': {}", candidateId, tagName, url);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Zoho-oauthtoken " + token)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.noBody())
+                    .build();
+
+            HttpClient client = HttpClient.newHttpClient();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            log.info("Tag candidate status: {}", response.statusCode());
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                log.error("Erro ao marcar candidato. Status: {}, Body: {}", response.statusCode(), response.body());
+                throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode() + " ao marcar candidato");
+            }
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Erro ao marcar candidato {}: {}", candidateId, e.getMessage(), e);
+            throw ApiException.badGateway("Falha ao marcar candidato no Zoho");
+        }
+    }
+
+    // Notes //
+    public String fetchCandidateNotes(String candidateId) {
+        try {
+            String token = authService.generateAccessToken();
+            String url = properties.baseUrl() + "/Candidates/" + candidateId + "/Notes";
+
+            log.info("Fetching notes for candidate {}: {}", candidateId, url);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Zoho-oauthtoken " + token)
+                    .GET()
+                    .build();
+
+            HttpClient client = HttpClient.newHttpClient();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            log.info("Notes fetch status: {}", response.statusCode());
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                log.error("Erro ao buscar notas. Status: {}, Body: {}", response.statusCode(), response.body());
+                throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode() + " ao buscar notas");
+            }
+
+            return response.body();
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Erro ao buscar notas do candidato {}: {}", candidateId, e.getMessage(), e);
+            throw ApiException.badGateway("Falha ao buscar notas no Zoho");
+        }
+    }
+
     // Applications //
     public String fetchOneApplication() {
         try {
@@ -321,6 +422,41 @@ public class ZohoClientService {
         } catch (Exception e) {
             log.error("Erro ao buscar application no Zoho: {}", e.getMessage(), e);
             throw ApiException.badGateway("Falha ao buscar application no Zoho");
+        }
+    }
+
+    public String listApplicationsByCandidate(String candidateId) {
+        try {
+            String token = authService.generateAccessToken();
+            String criteria = "Candidate.id:equals:" + candidateId;
+            String url = properties.baseUrl() + "/Applications?criteria="
+                    + java.net.URLEncoder.encode(criteria, java.nio.charset.StandardCharsets.UTF_8);
+
+            log.info("Listing applications for candidate {}: {}", candidateId, url);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Zoho-oauthtoken " + token)
+                    .GET()
+                    .build();
+
+            HttpClient client = HttpClient.newHttpClient();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            log.info("Applications list status: {}", response.statusCode());
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                log.error("Erro ao listar applications. Status: {}, Body: {}", response.statusCode(), response.body());
+                throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode() + " ao listar applications");
+            }
+
+            return response.body();
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Erro ao listar applications do candidato {}: {}", candidateId, e.getMessage(), e);
+            throw ApiException.badGateway("Falha ao listar applications no Zoho");
         }
     }
 
