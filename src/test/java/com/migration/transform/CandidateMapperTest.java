@@ -8,9 +8,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
-import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 class CandidateMapperTest {
@@ -206,30 +203,6 @@ class CandidateMapperTest {
         assertNull(result.getCandidate_location());
     }
 
-    @SuppressWarnings("unchecked")
-    @Test
-    @DisplayName("Skills parseadas do Stacks_LinkedIn (newline) dentro de custom_fields")
-    void skillsNewline() throws Exception {
-        String json = """
-                {"data": [{"Stacks_LinkedIn": "Python\\neMarketing\\nJava\\nCanva"}]}
-                """;
-        JsonNode root = mapper.readTree(json).path("data").get(0);
-        ManatalCandidate result = candidateMapper.toManatal(root);
-        assertEquals(Arrays.asList("Python", "eMarketing", "Java", "Canva"), result.getCustom_fields().get("skills"));
-    }
-
-    @SuppressWarnings("unchecked")
-    @Test
-    @DisplayName("Skills parseadas do Stacks_LinkedIn (comma) dentro de custom_fields")
-    void skillsComma() throws Exception {
-        String json = """
-                {"data": [{"Stacks_LinkedIn": "LinkedIn, Docker, Git, Spring Boot"}]}
-                """;
-        JsonNode root = mapper.readTree(json).path("data").get(0);
-        ManatalCandidate result = candidateMapper.toManatal(root);
-        assertEquals(Arrays.asList("LinkedIn", "Docker", "Git", "Spring Boot"), result.getCustom_fields().get("skills"));
-    }
-
     @Test
     @DisplayName("Owner fixo 1193857")
     void ownerFixo() throws Exception {
@@ -253,14 +226,14 @@ class CandidateMapperTest {
     }
 
     @Test
-    @DisplayName("intField parseia string numerica em custom_fields")
-    void intFieldString() throws Exception {
+    @DisplayName("availabilityweeks em custom_fields recebe valor em dias")
+    void availabilityWeeksCustomField() throws Exception {
         String json = """
                 {"data": [{"Availability_Days": "30", "Number_of_Dependants": "2"}]}
                 """;
         JsonNode root = mapper.readTree(json).path("data").get(0);
         ManatalCandidate result = candidateMapper.toManatal(root);
-        assertEquals(4, result.getCustom_fields().get("availabilityweeks"));
+        assertEquals(Integer.valueOf(30), result.getCustom_fields().get("availabilityweeks"));
         assertEquals(2, result.getCustom_fields().get("numberofdependants"));
     }
 
@@ -299,14 +272,15 @@ class CandidateMapperTest {
     }
 
     @Test
-    @DisplayName("yearofexperience mapeado de Experience_in_Years")
-    void yearOfExperienceMapeado() throws Exception {
+    @DisplayName("yearofexperience em structured info note")
+    void yearOfExperienceInNotes() throws Exception {
         String json = """
                 {"data": [{"Experience_in_Years": 5}]}
                 """;
         JsonNode root = mapper.readTree(json).path("data").get(0);
-        ManatalCandidate result = candidateMapper.toManatal(root);
-        assertEquals(Integer.valueOf(5), result.getYearofexperience());
+        String info = candidateMapper.extractStructuredInfo(root);
+        assertNotNull(info);
+        assertTrue(info.contains("5"));
     }
 
     @Test
@@ -339,7 +313,7 @@ class CandidateMapperTest {
                 """;
         JsonNode root = mapper.readTree(json).path("data").get(0);
         ManatalCandidate result = candidateMapper.toManatal(root);
-        assertEquals("Negotiable", result.getCustom_fields().get("salary_notes"));
+        assertEquals("Negotiable", result.getCustom_fields().get("salarynotes"));
     }
 
     @Test
@@ -363,8 +337,8 @@ class CandidateMapperTest {
         assertEquals(true, result.getCustom_fields().get("canrelocate"));
         assertEquals(true, result.getCustom_fields().get("workvisaeucitizenship"));
         assertEquals("Married", result.getCustom_fields().get("civilstatus"));
-        assertEquals(2, result.getCustom_fields().get("availabilityweeks"));
+        assertEquals(Integer.valueOf(14), result.getCustom_fields().get("availabilityweeks"));
         assertEquals(1, result.getCustom_fields().get("numberofdependants"));
-        assertEquals("Teste", result.getCustom_fields().get("additional_info"));
+        assertEquals("Teste", result.getCustom_fields().get("additionalinformation"));
     }
 }

@@ -46,6 +46,12 @@ public class CandidateMigrationProcessor implements ItemProcessor<CandidateMigra
             List<String> zohoNotes = fetchRealNotes(item.getZohoCandidateId());
             pkg.setZohoNotes(zohoNotes);
 
+            String structuredInfo = candidateMapper.extractStructuredInfo(zohoData);
+            pkg.setStructuredInfo(structuredInfo);
+
+            List<String> interviewNotes = fetchRealInterviews(item.getZohoCandidateId());
+            pkg.setInterviewNotes(interviewNotes);
+
             fetchApplicationsAndAttachments(item.getZohoCandidateId(), pkg);
             pkg.getCandidateMigration().setApplicationId(pkg.getApplicationId());
 
@@ -109,6 +115,25 @@ public class CandidateMigrationProcessor implements ItemProcessor<CandidateMigra
             }
         } catch (Exception e) {
             log.warn("Could not fetch notes for candidate {}: {}", zohoCandidateId, e.getMessage());
+        }
+        return notes;
+    }
+
+    private List<String> fetchRealInterviews(String zohoCandidateId) {
+        List<String> notes = new ArrayList<>();
+        try {
+            String interviewsJson = zohoClientService.fetchInterviewsByCandidate(zohoCandidateId);
+            JsonNode data = objectMapper.readTree(interviewsJson).path("data");
+            if (data.isArray()) {
+                for (JsonNode interview : data) {
+                    String interviewNote = candidateMapper.extractInterviewInfo(interview);
+                    if (interviewNote != null) {
+                        notes.add(interviewNote);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not fetch interviews for candidate {}: {}", zohoCandidateId, e.getMessage());
         }
         return notes;
     }

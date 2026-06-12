@@ -7,5 +7,4 @@ public class ManatalAttachment {
     private String name;
     private String description;
     private String file;
-    private Integer creator;
 }

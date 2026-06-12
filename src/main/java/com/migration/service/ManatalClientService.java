@@ -110,7 +110,7 @@ public class ManatalClientService {
     public Map<String, Object> fetchCustomFieldsByCandidateId(String candidateId) {
         String url = normalizedBaseUrl() + "/candidates/" + candidateId + "/";
 
-        log.info("Fetching custom_fields from Manatal candidate: {}", candidateId);
+        log.info("Fetching candidate data from Manatal: {}", candidateId);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
@@ -132,18 +132,14 @@ public class ManatalClientService {
             }
 
             JsonNode root = mapper.readTree(response.body());
-            JsonNode customFields = root.get("custom_fields");
-            if (customFields == null || customFields.isNull()) {
-                log.warn("Candidato {} nao possui custom_fields em Manatal", candidateId);
-                return Map.of();
-            }
 
-            return mapper.convertValue(customFields, new TypeReference<Map<String, Object>>() {});
+            // Retorna o response completo para inspecionar todos os campos
+            return mapper.convertValue(root, new TypeReference<Map<String, Object>>() {});
 
         } catch (ApiException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Erro ao buscar custom_fields do candidato {} no Manatal: {}", candidateId, e.getMessage(), e);
+            log.error("Erro ao buscar campos do candidato {} no Manatal: {}", candidateId, e.getMessage(), e);
             throw ApiException.badGateway("Falha na comunicação com a API do Manatal");
         }
     }
@@ -191,42 +187,6 @@ public class ManatalClientService {
             throw e;
         } catch (Exception e) {
             log.error("Erro ao buscar custom_fields do primeiro candidato no Manatal: {}", e.getMessage(), e);
-            throw ApiException.badGateway("Falha na comunicação com a API do Manatal");
-        }
-    }
-
-    public String fetchCandidateActivities(String candidateId) {
-        String url = normalizedBaseUrl() + "/candidates/" + candidateId + "/activities/";
-
-        log.info("Fetching activities for candidate {} from Manatal: {}", candidateId, url);
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Authorization", "Token " + token)
-                .GET()
-                .build();
-
-        HttpClient client = HttpClient.newHttpClient();
-
-        try {
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-            log.info("Manatal response status: {}", response.statusCode());
-
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                log.error("Erro ao buscar atividades do candidato {} no Manatal. Status: {}, Body: {}",
-                        candidateId, response.statusCode(), response.body());
-                throw new ApiException(
-                        HttpStatus.BAD_GATEWAY,
-                        "Manatal API retornou status " + response.statusCode()
-                );
-            }
-
-            return response.body();
-        } catch (ApiException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Erro ao buscar atividades do candidato {} no Manatal: {}", candidateId, e.getMessage(), e);
             throw ApiException.badGateway("Falha na comunicação com a API do Manatal");
         }
     }
@@ -377,7 +337,7 @@ public class ManatalClientService {
 
         try {
             String json = mapper.writeValueAsString(candidate);
-            log.debug("Payload: {}", json);
+            log.info("POST payload para Manatal: {}", json);
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -390,6 +350,7 @@ public class ManatalClientService {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
             log.info("Manatal response status: {}", response.statusCode());
+            log.info("Manatal response body: {}", response.body());
 
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 log.error("Erro ao criar candidato no Manatal. Status: {}, Body: {}", response.statusCode(), response.body());

@@ -29,12 +29,6 @@ public class ManatalController {
         return ResponseEntity.ok(response);
     }
 
-    @GetMapping("/candidates/{candidateId}/activities")
-    public ResponseEntity<String> fetchCandidateActivities(@PathVariable String candidateId) {
-        String response = service.fetchCandidateActivities(candidateId);
-        return ResponseEntity.ok(response);
-    }
-
     @GetMapping("/custom-fields")
     public ResponseEntity<?> fetchCustomFields(@RequestParam(required = false) String candidateId) {
         try {

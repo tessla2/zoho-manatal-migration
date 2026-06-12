@@ -50,6 +50,8 @@ public class CandidateMigrationWriter implements ItemWriter<CandidateMigrationPa
                 entity.setManatalCandidateId(manatalId);
 
                 postNotes(manatalId, pkg.getZohoNotes(), pkg.getNoteInfo());
+                postStructuredInfo(manatalId, pkg.getStructuredInfo());
+                postInterviewNotes(manatalId, pkg.getInterviewNotes());
                 postSocialMedia(manatalId, pkg.getLinkedinUrl());
                 postAttachments(manatalId, pkg.getStoredAttachmentIds());
 
@@ -60,6 +62,28 @@ public class CandidateMigrationWriter implements ItemWriter<CandidateMigrationPa
                 entity.setStatus("ERRO");
                 entity.setErrorMessage(e.getMessage());
                 repository.save(entity);
+            }
+        }
+    }
+
+    private void postStructuredInfo(String manatalCandidateId, String structuredInfo) {
+        if (structuredInfo == null || structuredInfo.isBlank()) return;
+        try {
+            manatalClientService.createNote(manatalCandidateId, structuredInfo);
+            log.info("Structured info posted for candidate {}", manatalCandidateId);
+        } catch (Exception e) {
+            log.warn("Failed to post structured info for candidate {}: {}", manatalCandidateId, e.getMessage());
+        }
+    }
+
+    private void postInterviewNotes(String manatalCandidateId, List<String> interviewNotes) {
+        if (interviewNotes == null || interviewNotes.isEmpty()) return;
+        for (String note : interviewNotes) {
+            try {
+                manatalClientService.createNote(manatalCandidateId, note);
+                log.info("Interview note posted for candidate {}", manatalCandidateId);
+            } catch (Exception e) {
+                log.warn("Failed to post interview note for candidate {}: {}", manatalCandidateId, e.getMessage());
             }
         }
     }

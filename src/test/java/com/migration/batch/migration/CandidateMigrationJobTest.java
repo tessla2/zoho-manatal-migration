@@ -93,6 +93,18 @@ class CandidateMigrationJobTest {
             {"data":[{"id":"att002","File_Name":"CV_Template.docx","File_Type":"docx","download_url":"https://zoho.com/att002"}]}
             """;
 
+    private static final String EMPTY_SEARCH_JSON = """
+            {"data":[], "info":{"more_records": false}}
+            """;
+
+    private static final String EMPTY_NOTES_JSON = """
+            {"data":[]}
+            """;
+
+    private static final String EMPTY_INTERVIEWS_JSON = """
+            {"data":[]}
+            """;
+
     @BeforeEach
     void setUp() {
         repository.deleteAll();
@@ -104,11 +116,14 @@ class CandidateMigrationJobTest {
     }
 
     private void mockSuccessFlow() {
+        when(zohoClientService.searchCandidates(any(), any(int.class), any(int.class))).thenReturn(EMPTY_SEARCH_JSON);
         when(zohoClientService.fetchCandidateById(ZOHO_ID)).thenReturn(ZOHO_JSON);
         when(zohoClientService.listApplicationsByCandidate(ZOHO_ID)).thenReturn(APPLICATIONS_JSON);
         when(zohoClientService.listCandidateAttachments(ZOHO_ID)).thenReturn(CANDIDATE_ATTACHMENTS_JSON);
         when(zohoClientService.listApplicationAttachments(APP_ID)).thenReturn(APP_ATTACHMENTS_JSON);
         when(zohoClientService.saveAttachment(any(), any(), any(), any(), any())).thenReturn(STORED_ATT_ID);
+        when(zohoClientService.fetchCandidateNotes(any())).thenReturn(EMPTY_NOTES_JSON);
+        when(zohoClientService.fetchInterviewsByCandidate(any())).thenReturn(EMPTY_INTERVIEWS_JSON);
 
         when(manatalClientService.createCandidate(any())).thenReturn("{\"id\":" + MANATAL_ID + "}");
 
@@ -139,9 +154,14 @@ class CandidateMigrationJobTest {
         verify(zohoClientService).tagCandidate(ZOHO_ID);
     }
 
+    private void mockLoadStepOnly() {
+        when(zohoClientService.searchCandidates(any(), any(int.class), any(int.class))).thenReturn(EMPTY_SEARCH_JSON);
+    }
+
     @Test
     @DisplayName("Job registra erro quando Zoho falha")
     void testMigrationJobWithZohoError() throws Exception {
+        mockLoadStepOnly();
         when(zohoClientService.fetchCandidateById(ZOHO_ID))
                 .thenThrow(new RuntimeException("Zoho API error"));
 
@@ -160,7 +180,10 @@ class CandidateMigrationJobTest {
     @Test
     @DisplayName("Job registra erro quando Manatal falha (tag step não executa)")
     void testMigrationJobWithManatalError() throws Exception {
+        mockLoadStepOnly();
         when(zohoClientService.fetchCandidateById(ZOHO_ID)).thenReturn(ZOHO_JSON);
+        when(zohoClientService.fetchCandidateNotes(any())).thenReturn(EMPTY_NOTES_JSON);
+        when(zohoClientService.fetchInterviewsByCandidate(any())).thenReturn(EMPTY_INTERVIEWS_JSON);
         when(zohoClientService.listApplicationsByCandidate(ZOHO_ID)).thenReturn(APPLICATIONS_JSON);
         when(zohoClientService.listCandidateAttachments(ZOHO_ID)).thenReturn(CANDIDATE_ATTACHMENTS_JSON);
         when(zohoClientService.listApplicationAttachments(APP_ID)).thenReturn(APP_ATTACHMENTS_JSON);

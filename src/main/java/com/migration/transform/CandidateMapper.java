@@ -39,37 +39,28 @@ public class CandidateMapper {
         c.setCcurrency(field(zoho, "Currency"));
         c.setEcurrency(field(zoho, "Currency"));
         c.setCountry(field(zoho, "Country"));
-        c.setYearofexperience(intField(zoho, "Experience_in_Years"));
 
         c.setNote(buildNotes(zoho));
 
         Map<String, Object> customFields = new HashMap<>();
-
-        List<String> rawSkills = utils.parseSkills(zoho);
-        if (rawSkills != null && !rawSkills.isEmpty()) {
-            customFields.put("skills", rawSkills);
-        }
 
         putIfNotNull(customFields, "canrelocate", yesNoToBool(field(zoho, "Relocation")));
         putIfNotNull(customFields, "workvisaeucitizenship", yesNoToBool(field(zoho, "WorkVisa")));
         putIfNotNull(customFields, "civilstatus", field(zoho, "Civil_Status"));
 
         Integer availabilityDays = intField(zoho, "Availability_Days");
-        if (availabilityDays != null) customFields.put("availabilityweeks", availabilityDays / 7);
+        if (availabilityDays != null) customFields.put("availabilityweeks", availabilityDays);
 
         putIfNotNull(customFields, "numberofdependants", intField(zoho, "Number_of_Dependants"));
 
-        putIfNotNull(customFields, "additional_info", field(zoho, "Additional_Information"));
+        putIfNotNull(customFields, "additionalinformation", field(zoho, "Additional_Information"));
         putIfNotNull(customFields, "first_name", field(zoho, "First_Name"));
         putIfNotNull(customFields, "last_name", field(zoho, "Last_Name"));
 
-        putIfNotNull(customFields, "salary_notes", field(zoho, "Salary_Notes"));
+        putIfNotNull(customFields, "salarynotes", field(zoho, "Salary_Notes"));
         putIfNotNull(customFields, "city", safeField(zoho, "City", "Candidate_City"));
         Integer currentSalary = parseSalaryField(zoho, "Current_Salary");
         if (currentSalary != null) customFields.put("csalary", currentSalary);
-
-        Integer expectedSalary = parseSalaryField(zoho, "Expected_Salary");
-        if (expectedSalary != null) customFields.put("esalary", expectedSalary);
 
         c.setCustom_fields(customFields);
 
@@ -113,18 +104,6 @@ public class CandidateMapper {
     private Boolean yesNoToBool(String value) {
         if (value == null) return null;
         return "Yes".equalsIgnoreCase(value.trim()) || "Sim".equalsIgnoreCase(value.trim()) || "true".equalsIgnoreCase(value.trim());
-    }
-
-    private Integer ownerId(JsonNode node, String name) {
-        JsonNode obj = node.get(name);
-        if (obj != null && obj.isObject()) {
-            JsonNode id = obj.get("id");
-            if (id == null || id.isNull()) return null;
-            if (id.isInt()) return id.asInt();
-            try { return Integer.parseInt(id.asText()); }
-            catch (NumberFormatException e) { return null; }
-        }
-        return null;
     }
 
     private String buildDescription(JsonNode node) {
@@ -172,6 +151,57 @@ public class CandidateMapper {
             }
         }
         return null;
+    }
+
+    public String extractStructuredInfo(JsonNode node) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("**Informação Adicional do Candidato**\n\n");
+
+        Integer expectedSalary = parseSalaryField(node, "Expected_Salary");
+        if (expectedSalary != null) {
+            sb.append("Salário Pretendido: ").append(expectedSalary);
+            String currency = field(node, "Currency");
+            if (currency != null) sb.append(" ").append(currency);
+            sb.append("\n");
+        }
+
+        Integer experience = intField(node, "Experience_in_Years");
+        if (experience != null) {
+            sb.append("Anos de Experiência: ").append(experience).append("\n");
+        }
+
+        String salaryNotes = field(node, "Salary_Notes");
+        if (salaryNotes != null) {
+            sb.append("Notas Salariais: ").append(salaryNotes).append("\n");
+        }
+
+        return sb.length() > "**Informação Adicional do Candidato**\n\n".length() ? sb.toString() : null;
+    }
+
+    public String extractInterviewInfo(JsonNode interview) {
+        StringBuilder sb = new StringBuilder();
+        String interviewType = interview.path("Interview_Type").asText("");
+        String interviewRound = interview.path("Interview_Round").asText("");
+        String scheduledTime = interview.path("Scheduled_Time").asText("");
+        String interviewer = interview.path("Interviewer").path("name").asText("");
+        String interviewStatus = interview.path("Interview_Status").asText("");
+        String feedback = interview.path("Feedback").asText("");
+        String rating = interview.path("Rating").asText("");
+
+        if (interviewType.isEmpty() && interviewRound.isEmpty() && feedback.isEmpty()) return null;
+
+        sb.append("**Entrevista");
+        if (!interviewType.isEmpty()) sb.append(" — ").append(interviewType);
+        sb.append("**\n");
+
+        if (!interviewRound.isEmpty()) sb.append("Round: ").append(interviewRound).append("\n");
+        if (!interviewer.isEmpty()) sb.append("Entrevistador: ").append(interviewer).append("\n");
+        if (!scheduledTime.isEmpty()) sb.append("Data: ").append(scheduledTime).append("\n");
+        if (!interviewStatus.isEmpty()) sb.append("Estado: ").append(interviewStatus).append("\n");
+        if (!rating.isEmpty()) sb.append("Classificação: ").append(rating).append("\n");
+        if (!feedback.isEmpty()) sb.append("Feedback:\n").append(feedback).append("\n");
+
+        return sb.toString();
     }
 
     private String buildCandidateLocation(String city, String country) {

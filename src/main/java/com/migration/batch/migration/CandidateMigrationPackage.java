@@ -18,5 +18,7 @@ public class CandidateMigrationPackage {
     private String noteInfo;
     private List<String> zohoNotes;
     private String linkedinUrl;
+    private String structuredInfo;
+    private List<String> interviewNotes;
     private String errorMessage;
 }

@@ -100,6 +100,40 @@ public class ZohoClientService {
         }
     }
 
+    public String searchCandidates(String criteria, int page, int perPage) {
+        try {
+            String token = authService.generateAccessToken();
+            String url = properties.baseUrl() + "/Candidates/search?criteria="
+                    + java.net.URLEncoder.encode(criteria, java.nio.charset.StandardCharsets.UTF_8)
+                    + "&page=" + page + "&per_page=" + perPage;
+
+            log.info("Searching candidates: {}", url);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Zoho-oauthtoken " + token)
+                    .GET()
+                    .build();
+
+            HttpClient client = HttpClient.newHttpClient();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            log.info("Search status: {}", response.statusCode());
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                log.error("Erro ao pesquisar candidatos. Status: {}, Body: {}", response.statusCode(), response.body());
+                throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode());
+            }
+
+            return response.body();
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Erro ao pesquisar candidatos: {}", e.getMessage(), e);
+            throw ApiException.badGateway("Falha na comunicação com a API do Zoho");
+        }
+    }
+
     @Transactional
     public String fetchAndSaveCandidates() {
         String rawJson = fetchOneCandidate();
@@ -390,6 +424,41 @@ public class ZohoClientService {
         } catch (Exception e) {
             log.error("Erro ao buscar notas do candidato {}: {}", candidateId, e.getMessage(), e);
             throw ApiException.badGateway("Falha ao buscar notas no Zoho");
+        }
+    }
+
+    // Interviews //
+    public String fetchInterviewsByCandidate(String candidateId) {
+        try {
+            String token = authService.generateAccessToken();
+            String criteria = "Candidate.id:equals:" + candidateId;
+            String url = properties.baseUrl() + "/Interviews?criteria="
+                    + java.net.URLEncoder.encode(criteria, java.nio.charset.StandardCharsets.UTF_8);
+
+            log.info("Fetching interviews for candidate {}: {}", candidateId, url);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Zoho-oauthtoken " + token)
+                    .GET()
+                    .build();
+
+            HttpClient client = HttpClient.newHttpClient();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            log.info("Interviews fetch status: {}", response.statusCode());
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                log.error("Erro ao buscar entrevistas. Status: {}, Body: {}", response.statusCode(), response.body());
+                throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode() + " ao buscar entrevistas");
+            }
+
+            return response.body();
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Erro ao buscar entrevistas do candidato {}: {}", candidateId, e.getMessage(), e);
+            throw ApiException.badGateway("Falha ao buscar entrevistas no Zoho");
         }
     }
 

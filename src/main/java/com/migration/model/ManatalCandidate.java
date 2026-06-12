@@ -14,20 +14,13 @@ public class ManatalCandidate {
     private String description;
     private Integer creator;
     private Integer owner;
-    private Integer yearofexperience;
     private String country;
-    private Integer availability;
-    private String nationalities;
-    private Integer number_of_dependents;
-    private String consent_to_rgpd_;
-    private Boolean aceitar_condi_es;
     private Boolean consent;
     private String candidate_location;
     private String email;
     private String phone_number;
     private String ccurrency;
     private String ecurrency;
-    private String worktype;
     private List<ManatalNote> note;
     private Map<String, Object> custom_fields;
 
