@@ -4,6 +4,7 @@ import com.migration.config.ZohoProperties;
 import com.migration.exception.ApiException;
 import com.migration.model.RawZohoData;
 import com.migration.model.StoredAttachment;
+import com.migration.notification.NotificationService;
 import com.migration.repository.RawZohoDataRepository;
 import com.migration.repository.StoredAttachmentRepository;
 import lombok.RequiredArgsConstructor;
@@ -28,8 +29,40 @@ public class ZohoClientService {
     private final ZohoProperties properties;
     private final RawZohoDataRepository rawDataRepository;
     private final StoredAttachmentRepository storedAttachmentRepository;
+    private final NotificationService notificationService;
 
+    private final java.util.concurrent.atomic.AtomicInteger zohoRateLimitRemaining = new java.util.concurrent.atomic.AtomicInteger(-1);
+    private final java.util.concurrent.atomic.AtomicInteger zohoRateLimitLimit = new java.util.concurrent.atomic.AtomicInteger(-1);
 
+    private int zohoRateLimitThreshold = 100;
+
+    @org.springframework.beans.factory.annotation.Value("${migration.zoho.rate-limit-threshold:100}")
+    public void setZohoRateLimitThreshold(int threshold) {
+        this.zohoRateLimitThreshold = threshold;
+    }
+
+    void checkZohoRateLimit(java.net.http.HttpResponse<?> response) {
+        response.headers().firstValue("X-RATE-LIMIT-REMAINING").ifPresent(v -> {
+            int remaining = Integer.parseInt(v);
+            zohoRateLimitRemaining.set(remaining);
+            if (remaining < zohoRateLimitThreshold) {
+                String msg = String.format("Apenas %d créditos Zoho restantes (threshold: %d)", remaining, zohoRateLimitThreshold);
+                log.warn(msg);
+                notificationService.sendAlert("Zoho Rate Limit Baixo", msg);
+            }
+        });
+        response.headers().firstValue("X-RATE-LIMIT-LIMIT").ifPresent(v ->
+            zohoRateLimitLimit.set(Integer.parseInt(v))
+        );
+    }
+
+    public int getZohoRateLimitRemaining() {
+        return zohoRateLimitRemaining.get();
+    }
+
+    public int getZohoRateLimitLimit() {
+        return zohoRateLimitLimit.get();
+    }
 
     //  Candidates //
     public String fetchCandidateById(String candidateId) {
@@ -57,6 +90,7 @@ public class ZohoClientService {
                 throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode());
             }
 
+            this.checkZohoRateLimit(response);
             return response.body();
         } catch (ApiException e) {
             throw e;
@@ -91,6 +125,7 @@ public class ZohoClientService {
                 throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode());
             }
 
+            this.checkZohoRateLimit(response);
             return response.body();
         } catch (ApiException e) {
             throw e;
@@ -125,6 +160,7 @@ public class ZohoClientService {
                 throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode());
             }
 
+            this.checkZohoRateLimit(response);
             return response.body();
         } catch (ApiException e) {
             throw e;
@@ -178,6 +214,7 @@ public class ZohoClientService {
                 throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode() + " ao listar anexos");
             }
 
+            this.checkZohoRateLimit(response);
             return response.body();
         } catch (ApiException e) {
             throw e;
@@ -218,6 +255,7 @@ public class ZohoClientService {
                 throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode() + " ao baixar anexo");
             }
 
+            this.checkZohoRateLimit(response);
             return response.body();
         } catch (ApiException e) {
             throw e;
@@ -256,6 +294,7 @@ public class ZohoClientService {
                 throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode() + " ao baixar anexo");
             }
 
+            this.checkZohoRateLimit(response);
             return response.body();
         } catch (ApiException e) {
             throw e;
@@ -316,6 +355,7 @@ public class ZohoClientService {
                 throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode());
             }
 
+            this.checkZohoRateLimit(response);
             return response.body();
         } catch (ApiException e) {
             throw e;
@@ -351,6 +391,7 @@ public class ZohoClientService {
                 throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode() + " ao listar tags");
             }
 
+            this.checkZohoRateLimit(response);
             return response.body();
         } catch (ApiException e) {
             throw e;
@@ -361,9 +402,12 @@ public class ZohoClientService {
     }
 
     public void tagCandidate(String candidateId) {
+        tagCandidateWithTag(candidateId, properties.successTagName());
+    }
+
+    public void tagCandidateWithTag(String candidateId, String tagName) {
         try {
             String token = authService.generateAccessToken();
-            String tagName = properties.tagName();
             String url = properties.baseUrl() + "/Candidates/" + candidateId + "/actions/add_tags?tag_names="
                     + java.net.URLEncoder.encode(tagName, java.nio.charset.StandardCharsets.UTF_8);
 
@@ -394,6 +438,35 @@ public class ZohoClientService {
         }
     }
 
+    public void removeTagFromCandidate(String candidateId, String tagName) {
+        try {
+            String token = authService.generateAccessToken();
+            String url = properties.baseUrl() + "/Candidates/" + candidateId + "/actions/remove_tags?tag_names="
+                    + java.net.URLEncoder.encode(tagName, java.nio.charset.StandardCharsets.UTF_8);
+
+            log.info("Removing tag '{}' from candidate {}: {}", tagName, candidateId, url);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Zoho-oauthtoken " + token)
+                    .header("Content-Type", "application/json")
+                    .DELETE()
+                    .build();
+
+            HttpClient client = HttpClient.newHttpClient();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            log.info("Remove tag status: {}", response.statusCode());
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                log.warn("Erro ao remover tag '{}' do candidato {}. Status: {}, Body: {}", tagName, candidateId, response.statusCode(), response.body());
+            }
+        } catch (Exception e) {
+            log.warn("Falha ao remover tag '{}' do candidato {}: {}", tagName, candidateId, e.getMessage());
+        }
+    }
+
     // Notes //
     public String fetchCandidateNotes(String candidateId) {
         try {
@@ -418,6 +491,7 @@ public class ZohoClientService {
                 throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode() + " ao buscar notas");
             }
 
+            this.checkZohoRateLimit(response);
             return response.body();
         } catch (ApiException e) {
             throw e;
@@ -431,9 +505,7 @@ public class ZohoClientService {
     public String fetchInterviewsByCandidate(String candidateId) {
         try {
             String token = authService.generateAccessToken();
-            String criteria = "Candidate.id:equals:" + candidateId;
-            String url = properties.baseUrl() + "/Interviews?criteria="
-                    + java.net.URLEncoder.encode(criteria, java.nio.charset.StandardCharsets.UTF_8);
+            String url = properties.baseUrl() + "/Candidates/" + candidateId + "/Interviews";
 
             log.info("Fetching interviews for candidate {}: {}", candidateId, url);
 
@@ -453,6 +525,7 @@ public class ZohoClientService {
                 throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode() + " ao buscar entrevistas");
             }
 
+            this.checkZohoRateLimit(response);
             return response.body();
         } catch (ApiException e) {
             throw e;
@@ -485,6 +558,7 @@ public class ZohoClientService {
                 throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode());
             }
 
+            this.checkZohoRateLimit(response);
             return response.body();
         } catch (ApiException e) {
             throw e;
@@ -497,9 +571,7 @@ public class ZohoClientService {
     public String listApplicationsByCandidate(String candidateId) {
         try {
             String token = authService.generateAccessToken();
-            String criteria = "Candidate.id:equals:" + candidateId;
-            String url = properties.baseUrl() + "/Applications?criteria="
-                    + java.net.URLEncoder.encode(criteria, java.nio.charset.StandardCharsets.UTF_8);
+            String url = properties.baseUrl() + "/Candidates/" + candidateId + "/Applications";
 
             log.info("Listing applications for candidate {}: {}", candidateId, url);
 
@@ -520,6 +592,7 @@ public class ZohoClientService {
                 throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode() + " ao listar applications");
             }
 
+            this.checkZohoRateLimit(response);
             return response.body();
         } catch (ApiException e) {
             throw e;
@@ -551,6 +624,7 @@ public class ZohoClientService {
                 throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode());
             }
 
+            this.checkZohoRateLimit(response);
             return response.body();
         } catch (ApiException e) {
             throw e;

@@ -108,7 +108,8 @@ class H2ConsoleTest {
         when(manatalClientService.createCandidate(any())).thenReturn("{\"id\":" + MANATAL_ID + "}");
         when(fileStorageService.getFileName(STORED_ATT_ID)).thenReturn("CV_Original.pdf");
         when(fileStorageService.getContentType(STORED_ATT_ID)).thenReturn("application/pdf");
-        doNothing().when(zohoClientService).tagCandidate(ZOHO_ID);
+        doNothing().when(zohoClientService).tagCandidateWithTag(any(), any());
+        doNothing().when(zohoClientService).removeTagFromCandidate(any(), any());
 
         JobParameters params = new JobParametersBuilder()
                 .addLong("timestamp", System.currentTimeMillis())

@@ -2,9 +2,11 @@ package com.migration.batch.migration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migration.entity.CandidateMigration;
+import com.migration.entity.MigrationLog;
 import com.migration.model.ManatalAttachment;
 import com.migration.model.ManatalResume;
 import com.migration.repository.CandidateMigrationRepository;
+import com.migration.repository.MigrationLogRepository;
 import com.migration.service.FileStorageService;
 import com.migration.service.ManatalClientService;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,7 @@ public class CandidateMigrationWriter implements ItemWriter<CandidateMigrationPa
 
     private final ManatalClientService manatalClientService;
     private final CandidateMigrationRepository repository;
+    private final MigrationLogRepository logRepository;
     private final FileStorageService fileStorageService;
 
     @Value("${migration.app.base-url}")
@@ -40,6 +43,7 @@ public class CandidateMigrationWriter implements ItemWriter<CandidateMigrationPa
                     entity.setStatus("ERRO");
                     entity.setErrorMessage(pkg.getErrorMessage());
                     repository.save(entity);
+                    saveLog(entity, "migrateCandidateStep", "ERRO", pkg.getErrorMessage());
                     continue;
                 }
 
@@ -57,11 +61,13 @@ public class CandidateMigrationWriter implements ItemWriter<CandidateMigrationPa
 
                 entity.setStatus("SUCESSO");
                 repository.save(entity);
+                saveLog(entity, "migrateCandidateStep", "SUCESSO", "Candidate " + pkg.getZohoCandidateId() + " -> Manatal " + manatalId);
             } catch (Exception e) {
                 log.error("Error writing candidate {}: {}", pkg.getZohoCandidateId(), e.getMessage());
                 entity.setStatus("ERRO");
                 entity.setErrorMessage(e.getMessage());
                 repository.save(entity);
+                saveLog(entity, "migrateCandidateStep", "ERRO", e.getMessage());
             }
         }
     }
@@ -146,6 +152,19 @@ public class CandidateMigrationWriter implements ItemWriter<CandidateMigrationPa
             } catch (Exception e) {
                 log.warn("Failed to post note for candidate {}: {}", manatalCandidateId, e.getMessage());
             }
+        }
+    }
+
+    private void saveLog(CandidateMigration entity, String step, String status, String message) {
+        try {
+            MigrationLog ml = new MigrationLog();
+            ml.setCandidateMigrationId(entity.getId());
+            ml.setStep(step);
+            ml.setStatus(status);
+            ml.setMessage(message);
+            logRepository.save(ml);
+        } catch (Exception e) {
+            log.warn("Failed to save migration log: {}", e.getMessage());
         }
     }
 

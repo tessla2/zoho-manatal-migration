@@ -7,6 +7,7 @@ public record ZohoProperties(
         OAuth oauth,
         String baseUrl,
         String tagName,
+        String successTagName,
         String dateStart,
         String dateEnd,
         int pageSize

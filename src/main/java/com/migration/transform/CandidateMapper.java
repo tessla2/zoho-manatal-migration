@@ -57,7 +57,7 @@ public class CandidateMapper {
         putIfNotNull(customFields, "first_name", field(zoho, "First_Name"));
         putIfNotNull(customFields, "last_name", field(zoho, "Last_Name"));
 
-        putIfNotNull(customFields, "salarynotes", field(zoho, "Salary_Notes"));
+        putIfNotNull(customFields, "salarynotes", buildSalaryNotes(zoho));
         putIfNotNull(customFields, "city", safeField(zoho, "City", "Candidate_City"));
         Integer currentSalary = parseSalaryField(zoho, "Current_Salary");
         if (currentSalary != null) customFields.put("csalary", currentSalary);
@@ -202,6 +202,21 @@ public class CandidateMapper {
         if (!feedback.isEmpty()) sb.append("Feedback:\n").append(feedback).append("\n");
 
         return sb.toString();
+    }
+
+    private String buildSalaryNotes(JsonNode node) {
+        String salaryNotes = field(node, "Salary_Notes");
+        Integer expectedSalary = parseSalaryField(node, "Expected_Salary");
+        String currency = field(node, "Currency");
+
+        StringBuilder sb = new StringBuilder();
+        if (salaryNotes != null) sb.append(salaryNotes);
+        if (expectedSalary != null) {
+            if (!sb.isEmpty()) sb.append(" | ");
+            sb.append("Salário Pretendido: ").append(expectedSalary);
+            if (currency != null) sb.append(" ").append(currency);
+        }
+        return sb.isEmpty() ? null : sb.toString();
     }
 
     private String buildCandidateLocation(String city, String country) {

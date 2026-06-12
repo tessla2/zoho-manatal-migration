@@ -18,6 +18,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Slf4j
 @Service
@@ -30,13 +31,33 @@ public class ManatalClientService {
     @Value("${migration.manatal.token}")
     private String token;
 
+    @Value("${migration.manatal.rate-limit-ms:600}")
+    private long rateLimitMs;
+
+    private final AtomicLong lastCallTime = new AtomicLong(0);
+
     private final ObjectMapper mapper = new ObjectMapper();
+
+    private void throttle() {
+        long now = System.currentTimeMillis();
+        long last = lastCallTime.get();
+        long elapsed = now - last;
+        if (elapsed < rateLimitMs) {
+            try {
+                Thread.sleep(rateLimitMs - elapsed);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        lastCallTime.set(System.currentTimeMillis());
+    }
 
     private String normalizedBaseUrl() {
         return baseUrl.replaceAll("/+$", "");
     }
 
     public String fetchCandidateById(String candidateId) {
+        throttle();
         String url = normalizedBaseUrl() + "/candidates/" + candidateId + "/";
 
         log.info("Fetching candidate {} from Manatal: {}", candidateId, url);
@@ -72,6 +93,7 @@ public class ManatalClientService {
     }
 
     public String fetchOneCandidate() {
+        throttle();
         String url = normalizedBaseUrl() + "/candidates/?limit=1";
 
         log.info("Fetching one candidate from Manatal: {}", url);
@@ -192,6 +214,7 @@ public class ManatalClientService {
     }
 
     public String createAttachment(String candidateId, ManatalAttachment attachment) {
+        throttle();
         String url = normalizedBaseUrl() + "/candidates/" + candidateId + "/attachments/";
 
         log.info("POSTing attachment to Manatal: {}", url);
@@ -227,6 +250,7 @@ public class ManatalClientService {
     }
 
     public String updateResume(String candidateId, ManatalResume resume) {
+        throttle();
         String url = normalizedBaseUrl() + "/candidates/" + candidateId + "/resume/";
 
         log.info("POSTing resume to Manatal: {}", url);
@@ -262,6 +286,7 @@ public class ManatalClientService {
     }
 
     public void createNote(String candidateId, String info) {
+        throttle();
         String url = normalizedBaseUrl() + "/candidates/" + candidateId + "/notes/";
 
         log.info("POSTing note to Manatal: {}", url);
@@ -295,6 +320,7 @@ public class ManatalClientService {
     }
 
     public void createSocialMedia(String candidateId, String socialMedia, String url) {
+        throttle();
         String endpoint = normalizedBaseUrl() + "/candidates/" + candidateId + "/social-media/";
 
         log.info("POSTing social-media to Manatal: {}", endpoint);
@@ -331,6 +357,7 @@ public class ManatalClientService {
     }
 
     public String createCandidate(ManatalCandidate candidate) {
+        throttle();
         String url = normalizedBaseUrl() + "/candidates/";
 
         log.info("POSTing candidate to Manatal: {}", url);

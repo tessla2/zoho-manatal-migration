@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Component
@@ -23,8 +24,21 @@ public class CandidateMigrationProcessor implements ItemProcessor<CandidateMigra
     private final CandidateMapper candidateMapper;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    private final AtomicInteger processedCount = new AtomicInteger(0);
+
+    @org.springframework.beans.factory.annotation.Value("${migration.batch.max-per-run:500}")
+    private int maxPerRun;
+
+    @org.springframework.beans.factory.annotation.Value("${migration.batch.chunk-size:1}")
+    private int chunkSize;
+
     @Override
     public CandidateMigrationPackage process(CandidateMigration item) {
+        if (!"PENDENTE".equals(item.getStatus())) return null;
+        if (processedCount.incrementAndGet() > maxPerRun) {
+            log.info("Max per run ({}) reached, skipping further items", maxPerRun);
+            return null;
+        }
 
         CandidateMigrationPackage pkg = new CandidateMigrationPackage();
         pkg.setCandidateMigration(item);

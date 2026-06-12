@@ -130,7 +130,8 @@ class CandidateMigrationJobTest {
         when(fileStorageService.getFileName(STORED_ATT_ID)).thenReturn("CV_Original.pdf");
         when(fileStorageService.getContentType(STORED_ATT_ID)).thenReturn("application/pdf");
 
-        doNothing().when(zohoClientService).tagCandidate(ZOHO_ID);
+        doNothing().when(zohoClientService).tagCandidateWithTag(any(), any());
+        doNothing().when(zohoClientService).removeTagFromCandidate(any(), any());
     }
 
     @Test
@@ -151,7 +152,8 @@ class CandidateMigrationJobTest {
         assertEquals(APP_ID, result.get().getApplicationId());
         assertTrue(result.get().getTaggedInZoho());
 
-        verify(zohoClientService).tagCandidate(ZOHO_ID);
+        verify(zohoClientService).tagCandidateWithTag(ZOHO_ID, "Exported");
+        verify(zohoClientService).removeTagFromCandidate(ZOHO_ID, "PendenteMigracao");
     }
 
     private void mockLoadStepOnly() {

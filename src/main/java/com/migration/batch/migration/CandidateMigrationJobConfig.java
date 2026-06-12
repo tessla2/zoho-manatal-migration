@@ -1,6 +1,8 @@
 package com.migration.batch.migration;
 
 import com.migration.entity.CandidateMigration;
+import com.migration.exception.ApiException;
+import com.migration.notification.BatchJobListener;
 import com.migration.repository.CandidateMigrationRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,14 +39,22 @@ public class CandidateMigrationJobConfig {
     private final CandidateMigrationProcessor processor;
     private final CandidateMigrationWriter writer;
     private final TagZohoTasklet tagZohoTasklet;
+    private final BatchJobListener batchJobListener;
 
     @Value("${migration.batch.chunk-size:1}")
     private int chunkSize;
+
+    @Value("${migration.batch.retry-limit:3}")
+    private int retryLimit;
+
+    @Value("${migration.batch.skip-limit:10}")
+    private int skipLimit;
 
     @Bean
     public Job candidateMigrationJob() {
         return new JobBuilder("candidateMigrationJob", jobRepository)
                 .incrementer(new RunIdIncrementer())
+                .listener(batchJobListener)
                 .start(loadCandidatesStep())
                 .next(migrateCandidateStep())
                 .next(tagZohoStep())
@@ -72,6 +82,13 @@ public class CandidateMigrationJobConfig {
                 .reader(candidateReader())
                 .processor(processor)
                 .writer(writer)
+                .faultTolerant()
+                .retryLimit(retryLimit)
+                .retry(ApiException.class)
+                .skipLimit(skipLimit)
+                .skip(Exception.class)
+                .noSkip(ApiException.class)
+                .noSkip(NullPointerException.class)
                 .build();
     }
 

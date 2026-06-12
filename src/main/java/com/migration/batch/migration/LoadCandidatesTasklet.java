@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migration.config.ZohoProperties;
 import com.migration.entity.CandidateMigration;
+import com.migration.entity.MigrationLog;
 import com.migration.repository.CandidateMigrationRepository;
+import com.migration.repository.MigrationLogRepository;
 import com.migration.service.ZohoClientService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +25,7 @@ public class LoadCandidatesTasklet implements Tasklet {
 
     private final ZohoClientService zohoClientService;
     private final CandidateMigrationRepository repository;
+    private final MigrationLogRepository logRepository;
     private final ZohoProperties zohoProperties;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -72,9 +75,14 @@ public class LoadCandidatesTasklet implements Tasklet {
 
             log.info("Load step complete. Total candidates loaded: {}", totalLoaded);
         } catch (Exception e) {
-            log.error("Failed to load candidates from Zoho: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to load candidates from Zoho", e);
+            log.warn("Could not load candidates from Zoho (continuing with existing DB records): {}", e.getMessage());
         }
+
+        MigrationLog ml = new MigrationLog();
+        ml.setStep("loadCandidatesStep");
+        ml.setStatus(totalLoaded > 0 ? "SUCESSO" : "SEM_NOVOS");
+        ml.setMessage("Loaded " + totalLoaded + " candidates from Zoho with tag '" + zohoProperties.tagName() + "'");
+        logRepository.save(ml);
 
         return RepeatStatus.FINISHED;
     }
