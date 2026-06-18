@@ -2,8 +2,8 @@ package com.migration.service;
 
 import com.migration.config.ZohoProperties;
 import com.migration.exception.ApiException;
-import com.migration.model.RawZohoData;
-import com.migration.model.StoredAttachment;
+import com.migration.entity.RawZohoData;
+import com.migration.entity.StoredAttachment;
 import com.migration.notification.NotificationService;
 import com.migration.repository.RawZohoDataRepository;
 import com.migration.repository.StoredAttachmentRepository;
@@ -35,16 +35,58 @@ public class ZohoClientService {
     private final java.util.concurrent.atomic.AtomicInteger zohoRateLimitLimit = new java.util.concurrent.atomic.AtomicInteger(-1);
 
     private int zohoRateLimitThreshold = 100;
+    private int zohoRateLimitCriticalThreshold = 20;
+    private int zohoRateLimitHaltThreshold = 5;
+    private long zohoRateLimitWaitMs = 60_000;
 
     @org.springframework.beans.factory.annotation.Value("${migration.zoho.rate-limit-threshold:100}")
     public void setZohoRateLimitThreshold(int threshold) {
         this.zohoRateLimitThreshold = threshold;
     }
 
+    @org.springframework.beans.factory.annotation.Value("${migration.zoho.rate-limit-critical-threshold:20}")
+    public void setZohoRateLimitCriticalThreshold(int threshold) {
+        this.zohoRateLimitCriticalThreshold = threshold;
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${migration.zoho.rate-limit-halt-threshold:5}")
+    public void setZohoRateLimitHaltThreshold(int threshold) {
+        this.zohoRateLimitHaltThreshold = threshold;
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${migration.zoho.rate-limit-wait-ms:60000}")
+    public void setZohoRateLimitWaitMs(long waitMs) {
+        this.zohoRateLimitWaitMs = waitMs;
+    }
+
     void checkZohoRateLimit(java.net.http.HttpResponse<?> response) {
         response.headers().firstValue("X-RATE-LIMIT-REMAINING").ifPresent(v -> {
             int remaining = Integer.parseInt(v);
             zohoRateLimitRemaining.set(remaining);
+
+            if (remaining <= zohoRateLimitHaltThreshold) {
+                String msg = String.format(
+                    "Zoho API: apenas %d créditos restantes (halt threshold: %d). A interromper operação para evitar falha total.",
+                    remaining, zohoRateLimitHaltThreshold);
+                log.error(msg);
+                notificationService.sendAlert("Zoho Rate Limite Crítico", msg);
+                throw new RuntimeException(msg);
+            }
+
+            if (remaining < zohoRateLimitCriticalThreshold) {
+                String msg = String.format(
+                    "Apenas %d créditos Zoho restantes (critical threshold: %d). A aguardar %dms antes de continuar...",
+                    remaining, zohoRateLimitCriticalThreshold, zohoRateLimitWaitMs);
+                log.warn(msg);
+                notificationService.sendAlert("Zoho Rate Limit Crítico", msg);
+                try {
+                    Thread.sleep(zohoRateLimitWaitMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return;
+            }
+
             if (remaining < zohoRateLimitThreshold) {
                 String msg = String.format("Apenas %d créditos Zoho restantes (threshold: %d)", remaining, zohoRateLimitThreshold);
                 log.warn(msg);
@@ -65,6 +107,39 @@ public class ZohoClientService {
     }
 
     //  Candidates //
+    public String listCandidates(int page, int perPage) {
+        try {
+            String token = authService.generateAccessToken();
+            String url = properties.baseUrl() + "/Candidates?page=" + page + "&per_page=" + perPage;
+
+            log.info("Listing candidates page {}: {}", page, url);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Zoho-oauthtoken " + token)
+                    .GET()
+                    .build();
+
+            HttpClient client = HttpClient.newHttpClient();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            log.info("List candidates status: {}", response.statusCode());
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                log.error("Erro ao listar candidatos. Status: {}, Body: {}", response.statusCode(), response.body());
+                throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode() + " ao listar candidatos");
+            }
+
+            this.checkZohoRateLimit(response);
+            return response.body();
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Erro ao listar candidatos: {}", e.getMessage(), e);
+            throw ApiException.badGateway("Falha na comunicação com a API do Zoho");
+        }
+    }
+
     public String fetchCandidateById(String candidateId) {
         try {
             String token = authService.generateAccessToken();
@@ -186,8 +261,6 @@ public class ZohoClientService {
         return rawJson;
     }
 
-
-
     // Attachments //
 
     public String listCandidateAttachments(String candidateId) {
@@ -223,6 +296,7 @@ public class ZohoClientService {
             throw ApiException.badGateway("Falha ao listar anexos no Zoho");
         }
     }
+
 
     public byte[] downloadAttachment(String attachmentId) {
         try {
@@ -264,6 +338,7 @@ public class ZohoClientService {
             throw ApiException.badGateway("Falha ao baixar anexo do Zoho");
         }
     }
+
 
     public byte[] downloadAttachmentFromUrl(String downloadUrl) {
         try {
@@ -450,7 +525,7 @@ public class ZohoClientService {
                     .uri(URI.create(url))
                     .header("Authorization", "Zoho-oauthtoken " + token)
                     .header("Content-Type", "application/json")
-                    .DELETE()
+                    .method("POST", HttpRequest.BodyPublishers.noBody())
                     .build();
 
             HttpClient client = HttpClient.newHttpClient();
@@ -460,10 +535,14 @@ public class ZohoClientService {
             log.info("Remove tag status: {}", response.statusCode());
 
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                log.warn("Erro ao remover tag '{}' do candidato {}. Status: {}, Body: {}", tagName, candidateId, response.statusCode(), response.body());
+                log.error("Erro ao remover tag '{}' do candidato {}. Status: {}, Body: {}", tagName, candidateId, response.statusCode(), response.body());
+                throw ApiException.badGateway("Falha ao remover tag '" + tagName + "' do candidato " + candidateId + ": " + response.body());
             }
+        } catch (ApiException e) {
+            throw e;
         } catch (Exception e) {
-            log.warn("Falha ao remover tag '{}' do candidato {}: {}", tagName, candidateId, e.getMessage());
+            log.error("Falha ao remover tag '{}' do candidato {}: {}", tagName, candidateId, e.getMessage());
+            throw ApiException.badGateway("Falha ao remover tag '" + tagName + "' do candidato " + candidateId + ": " + e.getMessage());
         }
     }
 

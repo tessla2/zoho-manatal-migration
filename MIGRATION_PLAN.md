@@ -5,21 +5,24 @@
 Cada candidato passa por este ciclo:
 
 ```
-ZOHO ──→ RAW DATA (PG/H2) ──→ TRANSFORM ──→ MANATAL ──→ TAG (ZOHO)
-         status=PENDENTE        manatal_id set  tag "Exported"
-         or status=ERRO         + error_message
+ZOHO ──→ LOAD (Tasklet) ──→ PROCESS (Chunk) ──→ WRITE (Manatal) ──→ TAG (Zoho)
+         status=PENDENTE      fetch Zoho+App+Interviews   POST candidate    add "Exported"
+         + attachments        transform + package         POST notes        remove "PendenteMigracao"
+                                                          POST attachments
+                                                          POST resume
 ```
 
 ---
 
 ## Requisitos
 
-- Ingestão via Zoho Recruit API (paginação padrão)
-- Persistência RAW
-- Transformação desacoplada
-- Exportação para Manatal
-- Rastreabilidade completa (saber o que foi processado e o que não foi)
-- Futuro: retry/idempotência + write tag "Exported" no Zoho
+- Ingestão via Zoho Recruit API (paginação, filtro por tag + data)
+- Transformação desacoplada via `CandidateMapper`
+- Exportação para Manatal (candidate + notes + custom_fields + attachments + resume)
+- Rate limiting: Manatal (600ms throttle) + Zoho (daily cap com 3 thresholds)
+- Notificações Slack/Email no fim do batch
+- Rastreabilidade completa (`candidate_migration` + `migration_log`)
+- Tags Zoho: `PendenteMigracao` → `Exported`
 
 ---
 
@@ -35,27 +38,36 @@ ZOHO ──→ RAW DATA (PG/H2) ──→ TRANSFORM ──→ MANATAL ──→ 
 ## Arquitetura Spring Batch
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                     candidateMigrationJob                          │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  ┌──────────────────────┐   ┌──────────────────────┐               │
-│  │  Step 1              │   │  Step 2              │               │
-│  │  loadCandidatesStep  │──▶│  migrateCandidateStep │               │
-│  │  (Tasklet)           │   │  (Chunk, size=N)     │               │
-│  └──────────────────────┘   └──────────────────────┘               │
-│                                     │                              │
-│                            ┌────────┴────────┐                    │
-│                            │                 │                    │
-│                       Processor           Writer                  │
-│                  ┌──────────────────┐  ┌───────────────────┐      │
-│                  │ 1. Fetch Zoho    │  │ 1. POST Manatal   │      │
-│                  │ 2. Fetch App     │  │ 2. POST Attach    │      │
-│                  │ 3. Download Att  │  │ 3. POST Resume    │      │
-│                  │ 4. Save Bytes DB │  │ 4. Update Status  │      │
-│                  │ 5. Transform     │  │ 5. Tag Zoho (fut) │      │
-│                  └──────────────────┘  └───────────────────┘      │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                          candidateMigrationJob                               │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────────────────────┐   ┌──────────────────────────┐                │
+│  │  Step 1                  │   │  Step 2                  │                │
+│  │  loadCandidatesStep      │──▶│  migrateCandidateStep    │                │
+│  │  (Tasklet)               │   │  (Chunk, size=N)         │                │
+│  │  - search Zoho by tag    │   └──────────────────────────┘                │
+│  │  - insert PENDENTE       │            │                                  │
+│  └──────────────────────────┘    ┌───────┴────────┐                         │
+│                                  │                │                         │
+│                             Processor          Writer                       │
+│                    ┌────────────────────┐  ┌─────────────────────────┐      │
+│                    │ 1. Fetch Zoho      │  │ 1. POST Manatal        │      │
+│                    │ 2. Fetch App       │  │ 2. POST Note           │      │
+│                    │ 3. Fetch Interviews│  │ 3. POST StructuredInfo │      │
+│                    │ 4. Download Att    │  │ 4. POST LinkedIn       │      │
+│                    │ 5. Save Bytes DB   │  │ 5. POST Attachments    │      │
+│                    │ 6. Transform       │  │ 6. POST Resume         │      │
+│                    └────────────────────┘  │ 7. Update Status       │      │
+│                                            └─────────────────────────┘      │
+│  ┌──────────────────────────┐                                                │
+│  │  Step 3                  │                                                │
+│  │  tagZohoStep             │                                                │
+│  │  (Tasklet)               │                                                │
+│  │  - add tag "Exported"    │                                                │
+│  │  - remove "Pendente"     │                                                │
+│  └──────────────────────────┘                                                │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -64,152 +76,180 @@ ZOHO ──→ RAW DATA (PG/H2) ──→ TRANSFORM ──→ MANATAL ──→ 
 
 ```
 com.migration
-├── Application.java                    (@EnableBatchProcessing)
+├── Application.java
 ├── config/
 │   ├── BatchConfig.java                (jobLauncher, jobRepository)
-│   ├── ManatalProperties.java          (já existe)
-│   └── ZohoProperties.java             (já existe)
+│   ├── ManatalProperties.java
+│   ├── ZohoProperties.java
+│   ├── SecurityConfig.java             (JWT filter + CORS)
+│   └── OpenApiConfig.java             (Swagger info + security scheme)
 ├── batch/
 │   ├── migration/
-│   │   ├── CandidateMigrationJobConfig.java   (job + steps)
-│   │   ├── LoadCandidatesTasklet.java         (Step 1)
-│   │   ├── CandidateMigrationProcessor.java   (Step 2 - process)
-│   │   ├── CandidateMigrationWriter.java      (Step 2 - write)
-│   │   └── CandidateMigrationPackage.java     (DTO entre steps)
+│   │   ├── CandidateMigrationJobConfig.java
+│   │   ├── LoadCandidatesTasklet.java
+│   │   ├── CandidateMigrationProcessor.java
+│   │   ├── CandidateMigrationWriter.java
+│   │   ├── CandidateMigrationPackage.java
+│   │   └── TagZohoTasklet.java
 │   └── listener/
-│       ├── JobCompletionListener.java         (log resultado)
-│       └── StepCompletionListener.java        (log cada step)
+│       └── BatchJobListener.java       (notificações Slack + Email)
 ├── entity/
-│   ├── CandidateMigration.java         (tabela de rastreio)
-│   └── MigrationLog.java              (audit log detalhado)
+│   ├── CandidateMigration.java
+│   ├── MigrationLog.java
+│   ├── RawZohoData.java
+│   └── StoredAttachment.java
 ├── repository/
 │   ├── CandidateMigrationRepository.java
-│   └── MigrationLogRepository.java
+│   ├── MigrationLogRepository.java
+│   ├── RawZohoDataRepository.java
+│   └── StoredAttachmentRepository.java
 ├── controller/
-│   ├── ManatalController.java          (já existe)
-│   ├── MigrationController.java        (já existe, será expandido)
-│   ├── ZohoController.java             (já existe)
-│   └── BatchController.java            (trigger job + reports)
+│   ├── AuthController.java
+│   ├── FileController.java
+│   ├── ManatalController.java
+│   ├── MigrationController.java
+│   ├── ZohoController.java
+│   └── BatchController.java
 ├── service/
-│   ├── ManatalClientService.java       (já existe, expandir)
-│   ├── ZohoClientService.java          (já existe)
-│   ├── ZohoAuthService.java            (já existe)
-│   └── FileStorageService.java         (servir bytes para URL do Manatal)
+│   ├── ManatalClientService.java       (REST client com throttle)
+│   ├── ZohoClientService.java          (REST client com OAuth refresh)
+│   ├── ZohoAuthService.java           (OAuth 2.0 token management)
+│   ├── MigrationService.java          (lógica de migração single)
+│   ├── FileStorageService.java        (store + serve attachment bytes)
+│   └── NotificationService.java       (Slack + Email alerts)
 ├── model/
-│   ├── ManatalCandidate.java           (já existe)
-│   ├── ManatalAttachment.java          (novo)
-│   ├── ManatalResume.java              (novo)
-│   ├── StoredAttachment.java           (já existe)
-│   └── ZohoAttachment.java             (já existe)
+│   ├── ManatalCandidate.java
+│   ├── ManatalAttachment.java
+│   └── ManatalResume.java
 ├── dto/
-│   └── MigrationSummary.java           (dashboard status)
+│   ├── MigrationSummary.java
+│   └── LoginRequest.java
 ├── transform/
-│   └── CandidateMapper.java            (já existe, expandir)
+│   └── CandidateMapper.java
 ├── report/
-│   └── ReportService.java              (gerar relatórios)
-├── exception/
-│   ├── ApiException.java               (já existe)
-│   └── GlobalExceptionHandler.java     (já existe)
-├── client/                             (vazio — futuros clients)
-├── extract/                            (vazio — extractors)
-├── loader/                             (vazio — loaders)
-└── oauth/                              (vazio — futuros providers)
+│   └── ReportService.java
+├── security/
+│   ├── JwtUtils.java
+│   ├── JwtAuthenticationFilter.java
+│   └── SecurityProperties.java
+└── exception/
+    ├── ApiException.java
+    ├── ErrorResponse.java
+    └── GlobalExceptionHandler.java     (10 exception types, JSON unificado)
 ```
 
 ---
 
 ## Database
 
-### Tabela nova: `candidate_migration`
+### `candidate_migration`
 
 | Coluna | Tipo | Descrição |
 |--------|------|-----------|
 | `id` | SERIAL PK | |
 | `zoho_candidate_id` | VARCHAR | ID no Zoho |
 | `application_id` | VARCHAR | ID da application no Zoho |
-| `manatal_candidate_id` | VARCHAR | ID criado no Manatal (preenchido após POST) |
+| `manatal_candidate_id` | VARCHAR | ID criado no Manatal (pós-migração) |
 | `status` | VARCHAR | `PENDENTE` → `PROCESSANDO` → `SUCESSO` / `ERRO` |
 | `error_message` | TEXT | Motivo do erro |
-| `chunk_attempt` | INT | Tentativa atual (para retry) |
+| `chunk_attempt` | INT | Tentativa actual (para retry) |
 | `tagged_in_zoho` | BOOLEAN | Se já marcou "Exported" no Zoho |
 | `created_at` | TIMESTAMP | |
 | `updated_at` | TIMESTAMP | |
 
-### Tabela nova: `migration_log`
+### `migration_log`
 
 | Coluna | Tipo | Descrição |
 |--------|------|-----------|
 | `id` | SERIAL PK | |
 | `candidate_migration_id` | BIGINT FK | Referência ao candidato |
-| `step` | VARCHAR | `LOAD`, `FETCH_ZOHO`, `DOWNLOAD`, `POST_MANATAL`, `POST_ATTACHMENT`, `TAG_ZOHO` |
+| `step` | VARCHAR | `LOAD`, `FETCH_ZOHO`, `DOWNLOAD`, `POST_MANATAL`, `POST_NOTE`, `POST_ATTACHMENT`, `TAG_ZOHO` |
 | `status` | VARCHAR | `OK` / `ERRO` |
 | `message` | TEXT | Detalhe do log |
 | `duration_ms` | BIGINT | Tempo gasto no passo |
 | `created_at` | TIMESTAMP | |
 
-### Tabelas existentes
+### `raw_zoho_data`
 
-- `raw_zoho_data` — JSON bruto do Zoho (já existe)
-- `stored_attachments` — bytes dos anexos baixados (já existe)
+JSON bruto dos candidatos Zoho (pré-transformação).
+
+### `stored_attachments`
+
+Bytes dos attachments baixados do Zoho, servidos via `/api/files/{id}`.
 
 ---
 
 ## Fluxo Detalhado — Migração de 1 Candidato
 
 ```
-1. GET  /Candidates/{id}                 → JSON + Resume (attachment ID)
-2. GET  /Applications?candidate={id}     → descobre Application ID
-3. GET  /Applications/{appId}/Attachments → CV template
-4. GET  /Candidates/{id}/Attachments     → CV original
-5. GET  /Attachments/{id}                → download CV original (bytes)
-6. GET  /Attachments/{id}                → download CV template (bytes)
-7. saveAttachment() x2                   → StoredAttachment no DB
-8. POST /candidates/                     → cria no Manatal
-   Resposta: { "id": 12345 }            ← MANATAL ID
-9. POST /candidates/12345/attachments/   → sobe CV template
-   Payload: { "name":"CV Empresa", "file":"http://localhost:8080/api/files/1" }
-10. POST /candidates/12345/resume/       → sobe CV original
-    Payload: { "resume_file": "http://localhost:8080/api/files/2" }
+1.  GET  /Candidates/{id}                      → JSON + Resume (attachment ID)
+2.  GET  /Applications?candidate={id}          → descobre Application ID
+3.  GET  /Interviews?candidate={id}            → fetch interview data
+4.  GET  /Candidates/{id}/Attachments          → CV original
+5.  GET  /Applications/{appId}/Attachments     → CV template
+6.  GET  /Attachments/{id}                     → download CV (bytes)
+7.  saveAttachment() x2                        → StoredAttachment no DB
+8.  POST /candidates/                          → cria no Manatal
+    Resposta: { "id": 12345 }                 ← MANATAL ID
+9.  POST /candidates/12345/notes/              → nota com Candidate_Description_Summary
+10. POST /candidates/12345/notes/              → structured info (expectedSalary, yearsofexperience, interview data)
+11. POST /candidates/12345/notes/              → social media (LinkedIn)
+12. POST /candidates/12345/attachments/        → attachment
+13. POST /candidates/12345/resume/             → resume
 ```
 
 ---
 
 ## Manatal API — Estruturas
 
-### POST /candidates/{candidate_pk}/attachments/
+### POST /candidates/
 
 ```json
 {
-  "name": "CV - Nome Candidato",
-  "description": "CV com template da empresa",
-  "file": "https://..."   ← URL, não binário
+  "full_name": "João Silva",
+  "email": "joao@email.com",
+  "phone_number": "+351911111111",
+  "country": "Portugal",
+  "creator": 1193857,
+  "owner": 1193857,
+  "custom_fields": {
+    "linkedin": "https://linkedin.com/in/joao",
+    "skills": ["eMarketing", "Canva"],
+    "csalary": 50000,
+    "city": "Lisbon"
+  }
 }
 ```
 
-### POST /candidates/{candidate_pk}/resume/
+### POST /candidates/{id}/attachments/
 
 ```json
 {
-  "resume_file": "https://..."   ← URL (pdf, doc, docx, rtf)
+  "name": "CV - João Silva",
+  "description": "Curriculum Vitae",
+  "file": "https://..."   ← URL pública
 }
 ```
 
-### Activity (read-only, GET apenas)
+### POST /candidates/{id}/resume/
+
+```json
+{
+  "resume_file": "https://..."   ← URL pública
+}
+```
+
+### Activity (GET apenas — read-only)
 
 ```json
 {
   "name": "Interview - Cargo",
   "description": "Detalhes",
-  "activity_type": "interview",
-  "due_date": "2025-01-14T10:00:00Z",
-  "duration": 60,
-  "importance": "normal",
-  "is_done": true,
-  "location": "Online"
+  "activity_type": "interview"
 }
 ```
 
-> ⚠️ O endpoint de activities **não aceita POST** no Open API v3.
+> ⚠️ Activities **não aceitam POST** no Open API v3 do Manatal. Dados de entrevista vão para notas.
 
 ---
 
@@ -266,17 +306,34 @@ migration:
 | Erro no processor | Skip + log em `migration_log` |
 | Erro no writer | Rollback + status=`ERRO` |
 | Candidate já migrado | Idempotência: verifica `manatal_candidate_id` |
-| Rate limit (429) | Aguarda `rate-limit-ms` + retry |
+| Rate limit Manatal (429) | Aguarda `rate-limit-ms` + retry |
+| Zoho daily cap ≤5 | Halt — lança `ApiException`, interrompe batch |
+| Zoho daily cap <20 | Pausa 60s até recuperar |
+| Zoho daily cap <100 | Log warning + alerta |
+
+Todas as excepções devolvem JSON estruturado via `ErrorResponse`:
+- 400: validation, malformed request
+- 401/403: authentication/authorization (JSON, não redirect)
+- 404: recurso não encontrado
+- 502: bad gateway (Zoho/Manatal API)
+- 500: erro interno
+
+---
+
+## Rate Limiting
+
+| API | Mecanismo | Configuração |
+|---|---|---|
+| Manatal | `throttle()` — `Thread.sleep` entre chamadas | `migration.manatal.rate-limit-ms: 600` |
+| Zoho | Leitura do header `X-RATE-LIMIT-REMAINING` | 3 thresholds: warning (<100), critical (<20), halt (≤5) |
+
+O Zoho não tem rate limit por segundo mas sim um **daily cap** de créditos (GET = 1 crédito). A app monitoriza o header em cada resposta e age conforme o threshold.
 
 ---
 
 ## Relatórios
 
-### Endpoint de dashboard
-
-```
-GET /api/batch/report
-```
+### GET /api/batch/report
 
 ```json
 {
@@ -284,18 +341,24 @@ GET /api/batch/report
   "sucesso": 850,
   "erro": 50,
   "pendente": 100,
-  "taxa_sucesso": "85%",
-  "ultima_execucao": "2026-05-20T10:00:00Z",
-  "erros_por_tipo": {
+  "taxaSucesso": "85%",
+  "ultimaExecucao": "2026-06-15T10:00:00",
+  "errosPorTipo": {
     "POST_MANATAL": 20,
     "DOWNLOAD_ATTACHMENT": 15,
     "FETCH_ZOHO": 15
   },
-  "top_erros": [
-    { "zoho_id": "123", "step": "POST_MANATAL", "message": "Timeout" }
+  "topErros": [
+    { "zohoId": "123", "step": "POST_MANATAL", "message": "Timeout" }
   ]
 }
 ```
+
+### Notificações (BatchJobListener)
+
+- Slack: webhook com resumo formatado
+- Email: relatório via SMTP
+- Activado por `migration.alerts.enabled=true`
 
 ---
 
@@ -313,102 +376,114 @@ VALUES ('76333000000000002', 'PENDENTE');
 
 ---
 
-## Dependências Maven (novas)
+## Testes
 
-```xml
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-batch</artifactId>
-</dependency>
+```powershell
+.\mvnw.cmd test
 ```
 
----
-
-## Fases de Implementação
-
-### Fase 1 — Infraestrutura
-
-| O quê | Arquivos |
-|-------|----------|
-| `pom.xml` + profiles yml + `@EnableBatchProcessing` | `pom.xml`, `application-dev.yml`, `application-prod.yml` |
-| Entidades + repositórios | `CandidateMigration`, `MigrationLog`, + repositories |
-| `BatchConfig.java` | Config do Spring Batch |
-
-### Fase 2 — Carga de IDs
-
-| O quê | Arquivos |
-|-------|----------|
-| `LoadCandidatesTasklet` | Lê mock ou query |
-| `CandidateMigrationJobConfig` | Job + Step 1 |
-| `BatchController` | Trigger `/api/batch/run` |
-
-### Fase 3 — Migração (core)
-
-| O quê | Arquivos |
-|-------|----------|
-| `CandidateMigrationProcessor` | Fetch Zoho + download + transform |
-| `CandidateMigrationWriter` | POST Manatal + attachments + resume |
-| `CandidateMigrationPackage` | DTO de dados entre steps |
-
-### Fase 4 — Visibilidade
-
-| O quê | Arquivos |
-|-------|----------|
-| `JobCompletionListener` | Log resultado |
-| `StepCompletionListener` | Log cada step |
-| `ReportService` | Dashboard `/api/batch/report` |
-
-### Fase 5 — Attachments
-
-| O quê | Arquivos |
-|-------|----------|
-| `FileStorageService` | Servir bytes para URL |
-| `ManatalAttachment` / `ManatalResume` | Models |
-
-### Fase 6 — Idempotência (futuro)
-
-| O quê | Descrição |
-|-------|-----------|
-| Step 3: `tagZohoStep` | `POST /Candidates/{id}/add_tags?tags=Exported` |
-| Retry | `retry-limit: 3` no step |
+| Teste | Cenários | Descrição |
+|---|---|---|
+| `CandidateMapperTest` | 30 | Transformação, linkedin, skills, custom_fields, structured info |
+| `CandidateMigrationJobTest` | 3 | Batch job: sucesso, erro writer, erro processor |
+| `H2ConsoleTest` | 1 | Integração com sleep para inspeção |
+| `ApplicationTests` | 1 | Context load |
 
 ---
 
-## API Endpoints (Após Implementação)
+## API Endpoints
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| `GET` | `/api/zoho/candidates` | Fetch 10 candidates from Zoho |
+| `POST` | `/api/auth/login` | Obter token JWT |
+| `GET` | `/api/zoho/candidates` | Lista 10 candidatos Zoho |
+| `GET` | `/api/zoho/candidates/save` | Fetch + save raw JSON |
 | `GET` | `/api/zoho/candidates/{id}` | Fetch 1 candidate by ID |
-| `GET` | `/api/zoho/candidates/save` | Fetch + save raw JSON to PG |
 | `GET` | `/api/zoho/candidates/{id}/attachments` | List attachments |
-| `GET` | `/api/zoho/attachments/{id}` | Download attachment binary |
-| `GET` | `/api/zoho/candidates/{cid}/attachments/{aid}/save` | Download + store in PG |
-| `GET` | `/manatal/candidates/{candidateId}/activities` | List activities |
-| `GET` | `/api/migration/candidates/{id}/preview` | Preview transformed |
-| `GET` | `/api/migration/candidates/{id}/migrate` | Migrate 1 candidate |
+| `GET` | `/api/zoho/attachments/{id}` | Download attachment |
+| `GET` | `/api/zoho/candidates/{cid}/attachments/{aid}/save` | Store attachment in DB |
+| `GET` | `/api/zoho/interviews` | Fetch one interview |
+| `GET` | `/api/zoho/applications` | Fetch one application |
+| `GET` | `/api/zoho/applications/{id}/attachments` | Application attachments |
+| `GET` | `/api/zoho/tags` | List tags by module |
+| `GET` | `/api/manatal/candidates` | Fetch first Manatal candidate |
+| `GET` | `/api/manatal/candidates/{id}` | Fetch candidate by ID |
+| `GET` | `/api/manatal/custom-fields` | Verify custom fields |
+| `GET` | `/api/migration/candidates/{id}/preview` | Preview transformed data |
+| `POST` | `/api/migration/candidates/{id}/migrate` | Migrate single candidate |
+| `GET` | `/api/migration/custom-fields/verify` | Compare expected vs existing |
+| `POST` | `/api/migration/candidates/{mid}/attachments/test` | Test attachment upload |
+| `POST` | `/api/migration/candidates/{mid}/resume/test` | Test resume upload |
+| `GET` | `/api/migration/tags/verify` | Verify Zoho tag exists |
 | `POST` | `/api/batch/run` | Trigger batch job |
 | `GET` | `/api/batch/report` | Migration dashboard |
+| `GET` | `/api/batch/logs` | Audit logs |
 | `GET` | `/api/files/{id}` | Serve attachment bytes |
+
+---
+
+## Mapeamento de Campos
+
+### Zoho → Manatal (nativos)
+
+| Zoho API | Manatal API |
+|----------|-------------|
+| `Full_Name` | `full_name` |
+| `Email` | `email` |
+| `Phone` | `phone_number` |
+| `Country` | `candidate_location` |
+| `Candidate_Description_Summary` + `Salary_Notes` | `description` |
+| `Currency` | `ccurrency` |
+| `Expected_Currency` | `ecurrency` |
+
+### Zoho → Manatal (custom_fields)
+
+| Campo | Tipo | Zoho |
+|---|---|---|
+| `canrelocate` | boolean | `Relocation` ("Yes"/"No") |
+| `workvisaeucitizenship` | boolean | `WorkVisa` ("Yes"/"No") |
+| `civilstatus` | string | `Civil_Status` |
+| `availabilityweeks` | int | `Availability_Days / 7` |
+| `numberofdependants` | int | `Number_of_Dependants` |
+| `consent_to_rgpd` | string | `Consent_to_RGPD` |
+| `additional_info` | string | `Additional_Information` |
+| `csalary` | int | `Current_Salary` |
+| `first_name` | string | `First_Name` |
+| `last_name` | string | `Last_Name` |
+| `city` | string | `City` |
+| `salary_notes` | string | `Salary_Notes` |
+| `linkedin` | string | `LinkedIn__s` |
+| `skills` | array | `Stacks_LinkedIn` / `Skills` |
+
+### Notas estruturadas (não custom fields)
+
+Campos que **não existem como custom fields** no Manatal e são enviados como notas:
+- `expectedsalary` — salário esperado
+- `yearsofexperience` — anos de experiência
+- Interview data — type, round, interviewer, status, rating, feedback
+
+### Normalizações
+
+- `name` → `full_name`
+- `phonenumber` → `phone_number`
+- `creator` / `owner` → integer ID fixo 1193857 (não string)
 
 ---
 
 ## Validações de Campos no Mapper
 
-### LinkedIn (`linkedin` em custom_fields)
-
-O Zoho envia o LinkedIn em vários formatos. O Manatal só aceita URLs que começam com `https://`.
+### LinkedIn
 
 | Entrada (Zoho) | Saída (Manatal) | Regra |
 |----------------|-----------------|-------|
-| `"https://linkedin.com/in/fulano"` | `"https://linkedin.com/in/fulano"` | Mantém |
+| `"https://linkedin.com/in/fulano"` | igual | Mantém |
 | `"linkedin.com/in/fulano"` | `"https://linkedin.com/in/fulano"` | Prefixa `https://` |
 | `"fulano"` | `"https://fulano"` | Prefixa `https://` |
 | `null` / vazio | `null` | Ignora |
 
-### Skills (`skills` em custom_fields)
+### Skills
 
-Skills do Zoho (livres) precisam ser filtradas contra uma **lista fixa de skills válidas** no Manatal:
+Skills do Zoho filtradas contra lista fixa de skills válidas no Manatal:
 
 ```
 ["eMarketing", "Broadcasting", "Consultancy Skills", "Paid Social",
@@ -421,88 +496,61 @@ Skills do Zoho (livres) precisam ser filtradas contra uma **lista fixa de skills
 |----------------|-----------------|
 | `["eMarketing", "Google Ads"]` | `["eMarketing", "Google Ads"]` |
 | `["Python", "eMarketing", "Java"]` | `["eMarketing"]` |
-| `["Python", "Node"]` | `[]` |
 | `"eMarketing\nPython\nCanva"` (multilinha) | `["eMarketing", "Canva"]` |
 | `null` | `null` |
 
-### Mapeamento de nomes de campos
-
-| Zoho API | Manatal API (campo padrão) | Manatal API (custom_fields) |
-|----------|---------------------------|----------------------------|
-| `Full_Name` | `full_name` | — |
-| `Email` | `email` | — |
-| `Phone` | `phone_number` | — |
-| `LinkedIn__s` | — | `linkedin` |
-| `Skills` / `Stacks_LinkedIn` | — | `skills` |
-| `Country` | — | `country` |
-| `Candidate_Owner` | `owner` (integer ID) | — |
-
-> ⚠️ `linkedin` e `skills` devem ser enviados dentro de `custom_fields` no POST do Manatal, pois não fazem parte do schema padrão.
-
-### Normalizações
-- `name` → `full_name`
-- `phonenumber` → `phone_number`
-- `creator` / `owner` → integer ID (não string name)
-
 ---
 
-## Testes Unitários
+## Fases de Implementação
 
-### O que testar no `CandidateMapper`
+### Fase 1 — Infraestrutura ✅
+- `pom.xml` + profiles yml + `@EnableBatchProcessing`
+- Entidades + repositórios
+- `BatchConfig.java`
 
-| Teste | Cenário | Valida |
-|-------|---------|--------|
-| `linkedinComHttps` | Zoho envia `"https://..."` | Mantém igual |
-| `linkedinSemProtocolo` | Zoho envia `"linkedin.com/in/x"` | Prefixa `https://` |
-| `linkedinApenasUsuario` | Zoho envia `"fulano"` | Prefixa `https://fulano` |
-| `linkedinNulo` | Zoho envia `null` | `linkedin = null` |
-| `linkedinVazio` | Zoho envia `""` | `linkedin = null` |
-| `skillsTodasValidas` | `["eMarketing", "Canva"]` | Mantém ambas |
-| `skillsMisturadas` | `["Python", "eMarketing", "Java"]` | Só `["eMarketing"]` |
-| `skillsNenhumaValida` | `["Python", "Node"]` | `[]` |
-| `skillsMultilinha` | `"eMarketing\nPython\nCanva"` | `["eMarketing", "Canva"]` |
-| `skillsNulo` | `null` | `null` |
-| `skillsArrayVazio` | `[]` | `[]` |
-| `fullNameMapeado` | `Full_Name: "João"` | `full_name = "João"` |
-| `emailMapeado` | `Email: "a@b.com"` | `email = "a@b.com"` |
-| `phoneMapeado` | `Phone: "11999999999"` | `phone_number = "11999999999"` |
-| `descricaoCompleta` | Summary + Salary | Concatena com `\n\n` |
-| `descricaoApenasSummary` | Só Summary | Só o summary |
-| `ownerExtraido` | `Candidate_Owner: {name: "João"}` | `ownerName = "João"` |
+### Fase 2 — Carga de IDs ✅
+- `LoadCandidatesTasklet`
+- `CandidateMigrationJobConfig`
+- `BatchController`
 
-### O que testar no `ManatalClientService`
+### Fase 3 — Migração (core) ✅
+- `CandidateMigrationProcessor`
+- `CandidateMigrationWriter`
+- `CandidateMigrationPackage`
 
-| Teste | Cenário | Valida |
-|-------|---------|--------|
-| `createCandidateSucesso` | Manatal retorna 201 com ID | Retorna o body |
-| `createCandidateErro` | Manatal retorna 400 | Lança `ApiException` |
-| `createCandidateTimeout` | Timeout de conexão | Lança `ApiException.badGateway` |
-| `fetchActivitiesSucesso` | Manatal retorna 200 com array | Retorna JSON |
-| `fetchActivitiesVazio` | Manatal retorna 200 com `[]` | Retorna `[]` |
+### Fase 4 — Visibilidade ✅
+- `BatchJobListener` + notificações
+- `ReportService`
+- `MigrationSummary`
 
-### Estrutura de testes
+### Fase 5 — Attachments ✅
+- `FileStorageService`
+- `ManatalAttachment` / `ManatalResume`
 
-```
-src/test/java/com/migration/
-├── ApplicationTests.java                      (já existe)
-├── transform/
-│   └── CandidateMapperTest.java               (17+ cenários)
-├── service/
-│   ├── ManatalClientServiceTest.java          (3+ cenários)
-│   └── ZohoClientServiceTest.java             (futuro)
-└── batch/
-    └── migration/
-        ├── LoadCandidatesTaskletTest.java     (futuro)
-        ├── CandidateMigrationProcessorTest.java (futuro)
-        └── CandidateMigrationWriterTest.java   (futuro)
-```
+### Fase 6 — Idempotência & Tags ✅
+- `TagZohoTasklet`: Step 3 do job
+- Retry (`retry-limit: 3`)
+- Tags `PendenteMigracao` → `Exported`
+
+### Fase 7 — Resiliência ✅
+- Rate limiting Manatal (throttle)
+- Zoho daily cap monitor (3 thresholds)
+- GlobalExceptionHandler + ErrorResponse (10 exception types)
+- AuthenticationEntryPoint (JSON 401/403)
+
+### Fase 8 — Documentação ✅
+- Swagger/OpenAPI (springdoc-openapi 2.8.6)
+- `OpenApiConfig` com security scheme
+- `@Operation` + `@ApiResponse` + `@Schema` em todos os endpoints e modelos
 
 ---
 
 ## Observações
 
-- Activities do Manatal **não podem ser criadas via API** (só GET)
-- Manatal espera **URL** para upload de arquivos, não bytes
-- O elo entre Zoho e Manatal é o `zoho_candidate_id` no `StoredAttachment`
-- Dev usa H2 com `data.sql`, prod usa PostgreSQL com schema gerenciado
+- Activities do Manatal **não podem ser criadas via API** (só GET) — entrevistas vão para notas
+- Manatal espera **URL pública** para upload de ficheiros, não bytes
 - `linkedin` e `skills` são custom fields no Manatal — vão dentro de `custom_fields`
+- `expectedsalary` e `yearsofexperience` não existem como custom fields — vão para notas
+- Owner/creator fixo como 1193857 (ID Helpdesk no Manatal)
+- Dev usa H2 com `data.sql`, prod usa PostgreSQL
+- Chunk size = 1 em dev para isolamento de falhas; prod pode ir até 50

@@ -1,6 +1,6 @@
 package com.migration.service;
 
-import com.migration.model.StoredAttachment;
+import com.migration.entity.StoredAttachment;
 import com.migration.repository.StoredAttachmentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

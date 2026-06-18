@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migration.config.ZohoProperties;
 import com.migration.entity.CandidateMigration;
 import com.migration.entity.MigrationLog;
+import com.migration.exception.ApiException;
 import com.migration.repository.CandidateMigrationRepository;
 import com.migration.repository.MigrationLogRepository;
 import com.migration.service.ZohoClientService;
@@ -33,14 +34,14 @@ public class LoadCandidatesTasklet implements Tasklet {
     public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) {
         log.info("Step: loading candidates from Zoho with tag '{}'...", zohoProperties.tagName());
 
-        String criteria = "Created_Time:between:" + zohoProperties.dateStart() + ":" + zohoProperties.dateEnd();
         int page = 1;
         int perPage = zohoProperties.pageSize();
         int totalLoaded = 0;
+        int maxRetries = 3;
 
         try {
             while (true) {
-                String json = zohoClientService.searchCandidates(criteria, page, perPage);
+                String json = listWithRetry(page, perPage, maxRetries);
                 JsonNode root = objectMapper.readTree(json);
                 JsonNode data = root.path("data");
 
@@ -51,20 +52,30 @@ public class LoadCandidatesTasklet implements Tasklet {
 
                 for (JsonNode candidate : data) {
                     String id = candidate.path("id").asText();
-                    String tag = candidate.path("Tag").asText("");
 
-                    if (tag.contains(zohoProperties.tagName())) {
-                        Optional<CandidateMigration> existing = repository.findByZohoCandidateId(id);
-                        if (existing.isEmpty()) {
-                            CandidateMigration entity = new CandidateMigration();
-                            entity.setZohoCandidateId(id);
-                            entity.setStatus("PENDENTE");
-                            repository.save(entity);
-                            totalLoaded++;
-                            log.info("Loaded candidate {} as PENDENTE", id);
-                        } else {
-                            log.debug("Candidate {} already exists in DB, skipping", id);
+                    JsonNode tagArray = candidate.path("Associated_Tags");
+                    boolean hasTag = false;
+                    if (tagArray.isArray()) {
+                        for (JsonNode t : tagArray) {
+                            String tagName = t.isTextual() ? t.asText() : t.path("name").asText("");
+                            if (tagName.equals(zohoProperties.tagName())) {
+                                hasTag = true;
+                                break;
+                            }
                         }
+                    }
+                    if (!hasTag) continue;
+
+                    Optional<CandidateMigration> existing = repository.findByZohoCandidateId(id);
+                    if (existing.isEmpty()) {
+                        CandidateMigration entity = new CandidateMigration();
+                        entity.setZohoCandidateId(id);
+                        entity.setStatus("PENDENTE");
+                        repository.save(entity);
+                        totalLoaded++;
+                        log.info("Loaded candidate {} as PENDENTE", id);
+                    } else {
+                        log.debug("Candidate {} already exists in DB, skipping", id);
                     }
                 }
 
@@ -74,16 +85,44 @@ public class LoadCandidatesTasklet implements Tasklet {
             }
 
             log.info("Load step complete. Total candidates loaded: {}", totalLoaded);
+        } catch (ApiException e) {
+            log.error("Zoho API error during load step after {} retries: {}", maxRetries, e.getMessage());
+            throw e;
         } catch (Exception e) {
-            log.warn("Could not load candidates from Zoho (continuing with existing DB records): {}", e.getMessage());
+            log.warn("Unexpected error during load step (continuing with partial data): {}", e.getMessage());
         }
 
+        saveLoadLog(totalLoaded);
+        return RepeatStatus.FINISHED;
+    }
+
+    private String listWithRetry(int page, int perPage, int maxRetries) {
+        Exception lastException = null;
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                return zohoClientService.listCandidates(page, perPage);
+            } catch (Exception e) {
+                lastException = e;
+                log.warn("Attempt {}/{} failed for page {}: {}", attempt, maxRetries, page, e.getMessage());
+                if (attempt < maxRetries) {
+                    try {
+                        Thread.sleep(1000L * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw ApiException.internalError("Interrupted during retry backoff", ie);
+                    }
+                }
+            }
+        }
+        throw ApiException.badGateway("Failed to load page " + page + " after " + maxRetries + " attempts: "
+                + lastException.getMessage());
+    }
+
+    private void saveLoadLog(int totalLoaded) {
         MigrationLog ml = new MigrationLog();
         ml.setStep("loadCandidatesStep");
         ml.setStatus(totalLoaded > 0 ? "SUCESSO" : "SEM_NOVOS");
         ml.setMessage("Loaded " + totalLoaded + " candidates from Zoho with tag '" + zohoProperties.tagName() + "'");
         logRepository.save(ml);
-
-        return RepeatStatus.FINISHED;
     }
 }

@@ -14,6 +14,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 
 @Slf4j
 @Service
@@ -23,7 +24,13 @@ public class ZohoAuthService {
     private final ZohoProperties properties;
     private final ObjectMapper mapper = new ObjectMapper();
 
+    private String cachedToken;
+    private Instant tokenExpiry = Instant.MIN;
+
     public String generateAccessToken() throws IOException, InterruptedException {
+        if (cachedToken != null && Instant.now().isBefore(tokenExpiry)) {
+            return cachedToken;
+        }
 
         // Pega a URL base configurada nas propriedades
         String url = properties.oauth().tokenUrl();
@@ -100,6 +107,12 @@ public class ZohoAuthService {
                             + response.body()
             );
         }
-        return accessTokenNode.asText();
+
+        String token = accessTokenNode.asText();
+        long expiresIn = json.has("expires_in") ? json.get("expires_in").asLong(3600) : 3600;
+        cachedToken = token;
+        tokenExpiry = Instant.now().plusSeconds(expiresIn - 60);
+        log.info("Token cached, expires in {}s", expiresIn);
+        return token;
     }
 }

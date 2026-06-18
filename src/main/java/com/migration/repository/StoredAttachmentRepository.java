@@ -1,6 +1,6 @@
 package com.migration.repository;
 
-import com.migration.model.StoredAttachment;
+import com.migration.entity.StoredAttachment;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

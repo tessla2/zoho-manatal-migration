@@ -130,6 +130,7 @@ public class ManatalClientService {
 
 
     public Map<String, Object> fetchCustomFieldsByCandidateId(String candidateId) {
+        throttle();
         String url = normalizedBaseUrl() + "/candidates/" + candidateId + "/";
 
         log.info("Fetching candidate data from Manatal: {}", candidateId);
@@ -167,6 +168,7 @@ public class ManatalClientService {
     }
 
     public Map<String, Object> fetchFirstCandidateCustomFields() {
+        throttle();
         String url = normalizedBaseUrl() + "/candidates/?limit=1";
 
         log.info("Fetching first candidate custom_fields from Manatal: {}", url);

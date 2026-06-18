@@ -3,6 +3,7 @@ package com.migration.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migration.config.ZohoProperties;
+import com.migration.exception.ApiException;
 import com.migration.model.ManatalCandidate;
 import com.migration.transform.CandidateMapper;
 import lombok.RequiredArgsConstructor;
@@ -10,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -23,35 +25,31 @@ public class MigrationService {
     private final CandidateMapper candidateMapper;
     private final ZohoProperties zohoProperties;
     private final ObjectMapper mapper;
+    private final AttachmentService attachmentService;
 
-    public ManatalCandidate previewCandidate(String candidateId) {
-        try {
-            String zohoJson = zohoClientService.fetchCandidateById(candidateId);
-            JsonNode zohoData = mapper.readTree(zohoJson).path("data").get(0);
-            return candidateMapper.toManatal(zohoData);
-        } catch (Exception e) {
-            throw new RuntimeException("Erro ao processar preview", e);
-        }
+    public ManatalCandidate previewCandidate(String candidateId) throws Exception {
+        String zohoJson = zohoClientService.fetchCandidateById(candidateId);
+        JsonNode zohoData = mapper.readTree(zohoJson).path("data").get(0);
+        return candidateMapper.toManatal(zohoData);
     }
 
-    public String migrateCandidate(String candidateId) {
-        try {
-            String zohoJson = zohoClientService.fetchCandidateById(candidateId);
-            JsonNode zohoData = mapper.readTree(zohoJson).path("data").get(0);
-            ManatalCandidate transformed = candidateMapper.toManatal(zohoData);
-            String response = manatalClientService.createCandidate(transformed);
-            String manatalId = mapper.readTree(response).path("id").asText();
+    public String migrateCandidate(String candidateId) throws Exception {
+        String zohoJson = zohoClientService.fetchCandidateById(candidateId);
+        JsonNode zohoData = mapper.readTree(zohoJson).path("data").get(0);
+        ManatalCandidate transformed = candidateMapper.toManatal(zohoData);
+        String response = manatalClientService.createCandidate(transformed);
+        String manatalId = mapper.readTree(response).path("id").asText();
 
-            postNotes(manatalId, candidateId, zohoData);
+        postNotes(manatalId, candidateId, zohoData);
 
-            String linkedinUrl = candidateMapper.extractLinkedinUrl(zohoData);
-            if (linkedinUrl != null) {
-                manatalClientService.createSocialMedia(manatalId, "linkedin", linkedinUrl);
-            }
-            return "Migrated: " + response;
-        } catch (Exception e) {
-            throw new RuntimeException("Erro ao migrar candidato", e);
+        String linkedinUrl = candidateMapper.extractLinkedinUrl(zohoData);
+        if (linkedinUrl != null) {
+            manatalClientService.createSocialMedia(manatalId, "linkedin", linkedinUrl);
         }
+
+        postAttachments(manatalId, candidateId);
+
+        return "Migrated: " + response;
     }
 
     private void postNotes(String manatalId, String candidateId, JsonNode zohoData) {
@@ -105,6 +103,29 @@ public class MigrationService {
         }
     }
 
+    private void postAttachments(String manatalId, String candidateId) {
+        try {
+            String applicationId = fetchApplicationId(candidateId);
+            List<Long> storedIds = attachmentService.downloadAndStore(candidateId, applicationId);
+            attachmentService.postToManatal(manatalId, storedIds);
+        } catch (Exception e) {
+            log.warn("Failed to post attachments for candidate {}: {}", candidateId, e.getMessage());
+        }
+    }
+
+    private String fetchApplicationId(String candidateId) {
+        try {
+            String appsJson = zohoClientService.listApplicationsByCandidate(candidateId);
+            JsonNode appsData = mapper.readTree(appsJson).path("data");
+            if (!appsData.isEmpty()) {
+                return appsData.get(0).path("id").asText();
+            }
+        } catch (Exception e) {
+            log.warn("Could not fetch application for candidate {}: {}", candidateId, e.getMessage());
+        }
+        return null;
+    }
+
     private void postInterviewNotes(String manatalId, String candidateId) {
         try {
             String interviewsJson = zohoClientService.fetchInterviewsByCandidate(candidateId);
@@ -122,74 +143,66 @@ public class MigrationService {
         }
     }
 
-    public Map<String, Object> verifyCustomFields(String candidateId) {
-        try {
-            Map<String, Object> existingFields;
-            if (candidateId != null && !candidateId.isBlank()) {
-                existingFields = manatalClientService.fetchCustomFieldsByCandidateId(candidateId);
-            } else {
-                existingFields = manatalClientService.fetchFirstCandidateCustomFields();
-            }
-
-            String zohoJson = zohoClientService.fetchOneCandidate();
-            JsonNode zohoData = mapper.readTree(zohoJson).path("data").get(0);
-            ManatalCandidate transformed = candidateMapper.toManatal(zohoData);
-            Map<String, Object> expectedFields = transformed.getCustom_fields();
-
-            Set<String> existingKeys = existingFields.keySet();
-            Set<String> expectedKeys = expectedFields.keySet();
-
-            Set<String> present = new java.util.HashSet<>(expectedKeys);
-            present.retainAll(existingKeys);
-
-            Set<String> missing = new java.util.HashSet<>(expectedKeys);
-            missing.removeAll(existingKeys);
-
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("existingCustomFields", existingFields);
-            result.put("expectedCustomFields", expectedFields);
-            result.put("presentKeys", present);
-            result.put("missingKeys", missing);
-            result.put("allConfigured", missing.isEmpty());
-
-            return result;
-        } catch (Exception e) {
-            throw new RuntimeException("Erro ao verificar custom fields", e);
+    public Map<String, Object> verifyCustomFields(String candidateId) throws Exception {
+        Map<String, Object> existingFields;
+        if (candidateId != null && !candidateId.isBlank()) {
+            existingFields = manatalClientService.fetchCustomFieldsByCandidateId(candidateId);
+        } else {
+            existingFields = manatalClientService.fetchFirstCandidateCustomFields();
         }
+
+        String zohoJson = zohoClientService.fetchOneCandidate();
+        JsonNode zohoData = mapper.readTree(zohoJson).path("data").get(0);
+        ManatalCandidate transformed = candidateMapper.toManatal(zohoData);
+        Map<String, Object> expectedFields = transformed.getCustom_fields();
+
+        Set<String> existingKeys = existingFields.keySet();
+        Set<String> expectedKeys = expectedFields.keySet();
+
+        Set<String> present = new java.util.HashSet<>(expectedKeys);
+        present.retainAll(existingKeys);
+
+        Set<String> missing = new java.util.HashSet<>(expectedKeys);
+        missing.removeAll(existingKeys);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("existingCustomFields", existingFields);
+        result.put("expectedCustomFields", expectedFields);
+        result.put("presentKeys", present);
+        result.put("missingKeys", missing);
+        result.put("allConfigured", missing.isEmpty());
+
+        return result;
     }
 
-    public Map<String, Object> verifyTag(String module) {
-        try {
-            String tagsJson = zohoClientService.listTags(module);
-            JsonNode tagsData = mapper.readTree(tagsJson).path("data").path("tags");
+    public Map<String, Object> verifyTag(String module) throws Exception {
+        String tagsJson = zohoClientService.listTags(module);
+        JsonNode tagsData = mapper.readTree(tagsJson).path("data").path("tags");
 
-            String expectedTag = zohoProperties.tagName();
-            boolean tagExists = false;
-            JsonNode tagNode = null;
-            if (tagsData.isArray()) {
-                for (JsonNode tag : tagsData) {
-                    String name = tag.path("name").asText();
-                    if (expectedTag.equals(name)) {
-                        tagExists = true;
-                        tagNode = tag;
-                        break;
-                    }
+        String expectedTag = zohoProperties.tagName();
+        boolean tagExists = false;
+        JsonNode tagNode = null;
+        if (tagsData.isArray()) {
+            for (JsonNode tag : tagsData) {
+                String name = tag.path("name").asText();
+                if (expectedTag.equals(name)) {
+                    tagExists = true;
+                    tagNode = tag;
+                    break;
                 }
             }
-
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("module", module);
-            result.put("expectedTag", expectedTag);
-            result.put("tagExists", tagExists);
-            if (tagNode != null) {
-                result.put("tagId", tagNode.path("id").asText());
-                result.put("tagDetails", mapper.convertValue(tagNode, java.util.Map.class));
-            }
-            result.put("allTags", tagsData);
-
-            return result;
-        } catch (Exception e) {
-            throw new RuntimeException("Erro ao verificar tag", e);
         }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("module", module);
+        result.put("expectedTag", expectedTag);
+        result.put("tagExists", tagExists);
+        if (tagNode != null) {
+            result.put("tagId", tagNode.path("id").asText());
+            result.put("tagDetails", mapper.convertValue(tagNode, java.util.Map.class));
+        }
+        result.put("allTags", tagsData);
+
+        return result;
     }
 }

@@ -1,4 +1,4 @@
-package com.migration.model;
+package com.migration.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

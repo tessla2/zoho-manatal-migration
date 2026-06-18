@@ -1,6 +1,6 @@
 package com.migration.repository;
 
-import com.migration.model.RawZohoData;
+import com.migration.entity.RawZohoData;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

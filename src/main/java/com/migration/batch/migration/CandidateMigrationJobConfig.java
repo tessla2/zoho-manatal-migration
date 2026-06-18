@@ -87,7 +87,6 @@ public class CandidateMigrationJobConfig {
                 .retry(ApiException.class)
                 .skipLimit(skipLimit)
                 .skip(Exception.class)
-                .noSkip(ApiException.class)
                 .noSkip(NullPointerException.class)
                 .build();
     }

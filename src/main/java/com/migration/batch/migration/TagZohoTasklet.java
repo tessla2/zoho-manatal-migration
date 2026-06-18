@@ -3,6 +3,7 @@ package com.migration.batch.migration;
 import com.migration.config.ZohoProperties;
 import com.migration.entity.CandidateMigration;
 import com.migration.entity.MigrationLog;
+import com.migration.exception.ApiException;
 import com.migration.repository.CandidateMigrationRepository;
 import com.migration.repository.MigrationLogRepository;
 import com.migration.service.ZohoClientService;
@@ -12,6 +13,7 @@ import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.repeat.RepeatStatus;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -25,6 +27,9 @@ public class TagZohoTasklet implements Tasklet {
     private final MigrationLogRepository logRepository;
     private final ZohoClientService zohoClientService;
     private final ZohoProperties zohoProperties;
+
+    @Value("${migration.batch.retry-limit:3}")
+    private int retryLimit;
 
     @Override
     public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) {
@@ -41,8 +46,7 @@ public class TagZohoTasklet implements Tasklet {
 
         for (CandidateMigration candidate : candidates) {
             try {
-                zohoClientService.tagCandidateWithTag(candidate.getZohoCandidateId(), zohoProperties.successTagName());
-                zohoClientService.removeTagFromCandidate(candidate.getZohoCandidateId(), zohoProperties.tagName());
+                tagWithRetry(candidate);
                 candidate.setTaggedInZoho(true);
                 repository.save(candidate);
                 log.info("Candidate {} tagged successfully", candidate.getZohoCandidateId());
@@ -57,6 +61,33 @@ public class TagZohoTasklet implements Tasklet {
         }
 
         return RepeatStatus.FINISHED;
+    }
+
+    private void tagWithRetry(CandidateMigration candidate) {
+        String zohoId = candidate.getZohoCandidateId();
+        Exception lastException = null;
+
+        for (int attempt = 1; attempt <= retryLimit; attempt++) {
+            try {
+                zohoClientService.tagCandidateWithTag(zohoId, zohoProperties.successTagName());
+                zohoClientService.removeTagFromCandidate(zohoId, zohoProperties.tagName());
+                return;
+            } catch (Exception e) {
+                lastException = e;
+                log.warn("Attempt {}/{} failed for candidate {}: {}", attempt, retryLimit, zohoId, e.getMessage());
+                if (attempt < retryLimit) {
+                    try {
+                        Thread.sleep(1000L * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw ApiException.internalError("Interrupted during retry backoff", ie);
+                    }
+                }
+            }
+        }
+
+        throw ApiException.badGateway("Failed to tag candidate " + zohoId + " after " + retryLimit + " attempts: "
+                + lastException.getMessage());
     }
 
     private void saveLog(CandidateMigration entity, String step, String status, String message) {
