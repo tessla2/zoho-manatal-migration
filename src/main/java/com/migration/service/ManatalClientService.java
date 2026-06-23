@@ -25,6 +25,8 @@ import java.util.concurrent.atomic.AtomicLong;
 @RequiredArgsConstructor
 public class ManatalClientService {
 
+    private final HttpClient client;
+
     @Value("${migration.manatal.base-url}")
     private String baseUrl;
 
@@ -68,8 +70,6 @@ public class ManatalClientService {
                 .GET()
                 .build();
 
-        HttpClient client = HttpClient.newHttpClient();
-
         try {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
@@ -103,8 +103,6 @@ public class ManatalClientService {
                 .header("Authorization", "Token " + token)
                 .GET()
                 .build();
-
-        HttpClient client = HttpClient.newHttpClient();
 
         try {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
@@ -140,8 +138,6 @@ public class ManatalClientService {
                 .header("Authorization", "Token " + token)
                 .GET()
                 .build();
-
-        HttpClient client = HttpClient.newHttpClient();
 
         try {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
@@ -179,7 +175,7 @@ public class ManatalClientService {
                 .GET()
                 .build();
 
-        HttpClient client = HttpClient.newHttpClient();
+
 
         try {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
@@ -232,7 +228,7 @@ public class ManatalClientService {
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
             log.info("Manatal attachment response status: {}", response.statusCode());
@@ -268,7 +264,7 @@ public class ManatalClientService {
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
             log.info("Manatal resume response status: {}", response.statusCode());
@@ -304,7 +300,7 @@ public class ManatalClientService {
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
             log.info("Manatal note response status: {}", response.statusCode());
@@ -341,7 +337,7 @@ public class ManatalClientService {
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
             log.info("Manatal social-media response status: {}", response.statusCode());
@@ -375,7 +371,7 @@ public class ManatalClientService {
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
             log.info("Manatal response status: {}", response.statusCode());

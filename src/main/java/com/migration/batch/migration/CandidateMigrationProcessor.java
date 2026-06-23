@@ -12,7 +12,9 @@ import org.springframework.batch.item.ItemProcessor;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
@@ -93,10 +95,10 @@ public class CandidateMigrationProcessor implements ItemProcessor<CandidateMigra
             List<Long> storedIds = new ArrayList<>();
 
             String candidateAttachmentsJson = zohoClientService.listCandidateAttachments(zohoCandidateId);
-            storedIds.addAll(processAttachments(zohoCandidateId, candidateAttachmentsJson));
+            storedIds.addAll(processAttachments(zohoCandidateId, null, candidateAttachmentsJson));
 
             String appAttachmentsJson = zohoClientService.listApplicationAttachments(applicationId);
-            storedIds.addAll(processAttachments(zohoCandidateId, appAttachmentsJson));
+            storedIds.addAll(processAttachments(zohoCandidateId, applicationId, appAttachmentsJson));
 
             if (!storedIds.isEmpty()) {
                 pkg.setStoredAttachmentIds(storedIds);
@@ -152,8 +154,9 @@ public class CandidateMigrationProcessor implements ItemProcessor<CandidateMigra
         return notes;
     }
 
-    private List<Long> processAttachments(String candidateId, String attachmentsJson) {
+    private List<Long> processAttachments(String candidateId, String applicationId, String attachmentsJson) {
         List<Long> ids = new ArrayList<>();
+        Set<String> seenAttachmentIds = new HashSet<>();
         try {
             JsonNode data = objectMapper.readTree(attachmentsJson).path("data");
             for (JsonNode att : data) {
@@ -163,12 +166,16 @@ public class CandidateMigrationProcessor implements ItemProcessor<CandidateMigra
                 String downloadUrl = att.path("download_url").asText(null);
 
                 if (attachmentId == null || attachmentId.isEmpty()) continue;
+                if (!seenAttachmentIds.add(attachmentId)) {
+                    log.debug("Skipping duplicate attachment {}", attachmentId);
+                    continue;
+                }
 
                 String finalFileName = fileName != null ? fileName : "attachment_" + attachmentId;
                 String finalFileType = fileType != null ? fileType : "application/octet-stream";
 
                 Long storedId = zohoClientService.saveAttachment(
-                        candidateId, attachmentId, finalFileName, finalFileType, downloadUrl);
+                        candidateId, applicationId, attachmentId, finalFileName, finalFileType, downloadUrl);
                 if (storedId != null) {
                     ids.add(storedId);
                     log.info("Saved attachment {} -> stored id {}", attachmentId, storedId);

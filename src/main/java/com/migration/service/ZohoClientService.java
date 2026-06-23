@@ -18,12 +18,15 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.time.LocalDateTime;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ZohoClientService {
+
+    private final HttpClient client;
 
     private final ZohoAuthService authService;
     private final ZohoProperties properties;
@@ -120,7 +123,7 @@ public class ZohoClientService {
                     .GET()
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
             log.info("List candidates status: {}", response.statusCode());
@@ -153,7 +156,7 @@ public class ZohoClientService {
                     .GET()
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
 
             HttpResponse<String> response =
                     client.send(request, HttpResponse.BodyHandlers.ofString());
@@ -188,7 +191,7 @@ public class ZohoClientService {
                     .GET()
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
 
             HttpResponse<String> response =
                     client.send(request, HttpResponse.BodyHandlers.ofString());
@@ -225,7 +228,7 @@ public class ZohoClientService {
                     .GET()
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
             log.info("Search status: {}", response.statusCode());
@@ -276,7 +279,7 @@ public class ZohoClientService {
                     .GET()
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
 
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
@@ -298,21 +301,19 @@ public class ZohoClientService {
     }
 
 
-    public byte[] downloadAttachment(String attachmentId) {
+    public byte[] downloadAttachment(String candidateId, String attachmentId) {
         try {
             String token = authService.generateAccessToken();
-            String url = properties.baseUrl() + "/Attachments/" + attachmentId;
+            String url = properties.baseUrl() + "/Candidates/" + candidateId + "/Attachments/" + attachmentId;
 
             log.info("Downloading attachment {}: {}", attachmentId, url);
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Authorization", "Zoho-oauthtoken " + token)
-                    .header("Accept", "application/octet-stream")
                     .GET()
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
 
             HttpResponse<byte[]> response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
 
@@ -340,6 +341,45 @@ public class ZohoClientService {
     }
 
 
+    public byte[] downloadApplicationAttachment(String applicationId, String attachmentId) {
+        try {
+            String token = authService.generateAccessToken();
+            String url = properties.baseUrl() + "/Applications/" + applicationId + "/Attachments/" + attachmentId;
+
+            log.info("Downloading application attachment {}: {}", attachmentId, url);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Zoho-oauthtoken " + token)
+                    .GET()
+                    .build();
+
+
+            HttpResponse<byte[]> response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+
+            log.info("Download application attachment status: {}", response.statusCode());
+
+            if (response.statusCode() == 204 || response.statusCode() == 404) {
+                log.warn("Anexo de application {} sem conteúdo (status {}). URL: {}", attachmentId, response.statusCode(), url);
+                return new byte[0];
+            }
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                String body = new String(response.body());
+                log.error("Erro ao baixar anexo de application {}. Status: {}, Body: {}", attachmentId, response.statusCode(), body);
+                throw new ApiException(HttpStatus.BAD_GATEWAY, "Zoho API retornou status " + response.statusCode() + " ao baixar anexo de application");
+            }
+
+            this.checkZohoRateLimit(response);
+            return response.body();
+        } catch (ApiException e) {
+            throw e;
+        } catch (IOException | InterruptedException e) {
+            log.error("Erro ao baixar anexo de application {}: {}", attachmentId, e.getMessage(), e);
+            throw ApiException.badGateway("Falha ao baixar anexo de application do Zoho");
+        }
+    }
+
     public byte[] downloadAttachmentFromUrl(String downloadUrl) {
         try {
             String token = authService.generateAccessToken();
@@ -352,7 +392,6 @@ public class ZohoClientService {
                     .GET()
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
 
             HttpResponse<byte[]> response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
 
@@ -381,11 +420,18 @@ public class ZohoClientService {
 
     @Transactional
     public Long saveAttachment(String candidateId, String attachmentId, String fileName, String fileType, String downloadUrl) {
+        return saveAttachment(candidateId, null, attachmentId, fileName, fileType, downloadUrl);
+    }
+
+    @Transactional
+    public Long saveAttachment(String candidateId, String applicationId, String attachmentId, String fileName, String fileType, String downloadUrl) {
         byte[] data;
         if (downloadUrl != null && !downloadUrl.isBlank()) {
             data = downloadAttachmentFromUrl(downloadUrl);
+        } else if (applicationId != null) {
+            data = downloadApplicationAttachment(applicationId, attachmentId);
         } else {
-            data = downloadAttachment(attachmentId);
+            data = downloadAttachment(candidateId, attachmentId);
         }
         if (data.length == 0) {
             log.warn("Anexo {} vazio, não será salvo", attachmentId);
@@ -419,7 +465,7 @@ public class ZohoClientService {
                     .GET()
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
 
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
@@ -455,7 +501,7 @@ public class ZohoClientService {
                     .GET()
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
 
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
@@ -495,7 +541,7 @@ public class ZohoClientService {
                     .POST(HttpRequest.BodyPublishers.noBody())
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
 
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
@@ -528,7 +574,7 @@ public class ZohoClientService {
                     .method("POST", HttpRequest.BodyPublishers.noBody())
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
 
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
@@ -560,7 +606,7 @@ public class ZohoClientService {
                     .GET()
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
             log.info("Notes fetch status: {}", response.statusCode());
@@ -594,7 +640,7 @@ public class ZohoClientService {
                     .GET()
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
             log.info("Interviews fetch status: {}", response.statusCode());
@@ -626,7 +672,7 @@ public class ZohoClientService {
                     .GET()
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
 
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
@@ -660,7 +706,7 @@ public class ZohoClientService {
                     .GET()
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
 
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
@@ -692,7 +738,7 @@ public class ZohoClientService {
                     .GET()
                     .build();
 
-            HttpClient client = HttpClient.newHttpClient();
+            
 
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 

@@ -72,10 +72,11 @@ public class ZohoController {
         @ApiResponse(responseCode = "200", description = "File downloaded"),
         @ApiResponse(responseCode = "204", description = "Attachment has no content", content = @Content)
     })
-    @GetMapping("/attachments/{attachmentId}")
+    @GetMapping("/candidates/{candidateId}/attachments/{attachmentId}")
     public ResponseEntity<byte[]> downloadAttachment(
+            @Parameter(description = "ID do candidato no Zoho") @PathVariable String candidateId,
             @Parameter(description = "ID do attachment no Zoho") @PathVariable String attachmentId) {
-        byte[] data = zohoClientService.downloadAttachment(attachmentId);
+        byte[] data = zohoClientService.downloadAttachment(candidateId, attachmentId);
         if (data.length == 0) {
             return ResponseEntity.noContent().build();
         }

@@ -7,10 +7,13 @@ import com.migration.model.ManatalResume;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -30,7 +33,7 @@ public class AttachmentService {
         List<Long> storedIds = new ArrayList<>();
         try {
             String candidateAttachmentsJson = zohoClientService.listCandidateAttachments(candidateId);
-            storedIds.addAll(parseAndSave(candidateId, candidateAttachmentsJson));
+            storedIds.addAll(parseAndSave(candidateId, null, candidateAttachmentsJson));
         } catch (Exception e) {
             log.warn("Could not fetch candidate attachments for {}: {}", candidateId, e.getMessage());
         }
@@ -38,7 +41,7 @@ public class AttachmentService {
         if (applicationId != null) {
             try {
                 String appAttachmentsJson = zohoClientService.listApplicationAttachments(applicationId);
-                storedIds.addAll(parseAndSave(candidateId, appAttachmentsJson));
+                storedIds.addAll(parseAndSave(candidateId, applicationId, appAttachmentsJson));
             } catch (Exception e) {
                 log.warn("Could not fetch application attachments for {}: {}", candidateId, e.getMessage());
             }
@@ -47,13 +50,18 @@ public class AttachmentService {
         return storedIds;
     }
 
-    public List<Long> parseAndSave(String candidateId, String attachmentsJson) {
+    public List<Long> parseAndSave(String candidateId, String applicationId, String attachmentsJson) {
         List<Long> ids = new ArrayList<>();
+        Set<String> seenAttachmentIds = new HashSet<>();
         try {
             JsonNode data = objectMapper.readTree(attachmentsJson).path("data");
             for (JsonNode att : data) {
                 String attachmentId = att.path("id").asText();
                 if (attachmentId == null || attachmentId.isEmpty()) continue;
+                if (!seenAttachmentIds.add(attachmentId)) {
+                    log.debug("Skipping duplicate attachment {}", attachmentId);
+                    continue;
+                }
 
                 String fileName = att.path("File_Name").asText(null);
                 String fileType = att.path("File_Type").asText(null);
@@ -63,7 +71,7 @@ public class AttachmentService {
                 String finalFileType = fileType != null ? fileType : "application/octet-stream";
 
                 Long storedId = zohoClientService.saveAttachment(
-                        candidateId, attachmentId, finalFileName, finalFileType, downloadUrl);
+                        candidateId, applicationId, attachmentId, finalFileName, finalFileType, downloadUrl);
                 if (storedId != null) {
                     ids.add(storedId);
                     log.info("Saved attachment {} -> stored id {}", attachmentId, storedId);
@@ -75,6 +83,7 @@ public class AttachmentService {
         return ids;
     }
 
+    @Async("attachmentExecutor")
     public void postToManatal(String manatalCandidateId, List<Long> storedAttachmentIds) {
         if (storedAttachmentIds == null || storedAttachmentIds.isEmpty()) return;
 
@@ -92,6 +101,7 @@ public class AttachmentService {
                     manatalClientService.updateResume(manatalCandidateId, resume);
                     resumePosted = true;
                     log.info("Resume posted for candidate {}: {}", manatalCandidateId, fileName);
+                    continue;
                 }
 
                 ManatalAttachment attachment = new ManatalAttachment();

@@ -27,7 +27,24 @@ public class FileStorageService {
         StoredAttachment attachment = getAttachment(id);
         if (attachment == null) return "application/octet-stream";
         String type = attachment.getFileType();
-        return type != null ? type : "application/octet-stream";
+        if (type != null && !type.isBlank() && !"application/octet-stream".equals(type))
+            return type;
+        return inferContentType(attachment.getFileName());
+    }
+
+    private String inferContentType(String fileName) {
+        if (fileName == null) return "application/octet-stream";
+        String lower = fileName.toLowerCase();
+        if (lower.endsWith(".pdf")) return "application/pdf";
+        if (lower.endsWith(".doc")) return "application/msword";
+        if (lower.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        if (lower.endsWith(".xls")) return "application/vnd.ms-excel";
+        if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+        if (lower.endsWith(".txt")) return "text/plain";
+        if (lower.endsWith(".rtf")) return "application/rtf";
+        return "application/octet-stream";
     }
 
     public String getFileName(Long id) {

@@ -121,7 +121,7 @@ class CandidateMigrationJobTest {
         when(zohoClientService.listApplicationsByCandidate(ZOHO_ID)).thenReturn(APPLICATIONS_JSON);
         when(zohoClientService.listCandidateAttachments(ZOHO_ID)).thenReturn(CANDIDATE_ATTACHMENTS_JSON);
         when(zohoClientService.listApplicationAttachments(APP_ID)).thenReturn(APP_ATTACHMENTS_JSON);
-        when(zohoClientService.saveAttachment(any(), any(), any(), any(), any())).thenReturn(STORED_ATT_ID);
+        when(zohoClientService.saveAttachment(any(), any(), any(), any(), any(), any())).thenReturn(STORED_ATT_ID);
         when(zohoClientService.fetchCandidateNotes(any())).thenReturn(EMPTY_NOTES_JSON);
         when(zohoClientService.fetchInterviewsByCandidate(any())).thenReturn(EMPTY_INTERVIEWS_JSON);
 

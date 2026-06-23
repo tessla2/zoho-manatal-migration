@@ -1,45 +1,52 @@
 package com.migration.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migration.exception.ErrorResponse;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-
-import java.io.IOException;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
 @Configuration
+@EnableWebSecurity
 @RequiredArgsConstructor
+@Slf4j
 public class SecurityConfig {
 
-    private final JwtAuthFilter jwtAuthFilter;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    public JwtAuthFilter jwtAuthFilter(JwtUtils jwtUtils) {
+        return new JwtAuthFilter(jwtUtils);
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http, JwtAuthFilter jwtAuthFilter) throws Exception {
         return http
                 .csrf(csrf -> csrf.disable())
+                .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
-                                "/api/auth/login",
-                                "/api/files/**",
-                                "/actuator/health",
-                                "/swagger-ui.html",
-                                "/swagger-ui/**",
-                                "/api-docs",
-                                "/v3/api-docs/**",
-                                "/dashboard.html",
-                                "/dashboard"
+                                AntPathRequestMatcher.antMatcher("/api/auth/login"),
+                                AntPathRequestMatcher.antMatcher("/api/files/**"),
+                                AntPathRequestMatcher.antMatcher("/actuator/health"),
+                                AntPathRequestMatcher.antMatcher("/h2-console/**"),
+                                AntPathRequestMatcher.antMatcher("/swagger-ui.html"),
+                                AntPathRequestMatcher.antMatcher("/swagger-ui/**"),
+                                AntPathRequestMatcher.antMatcher("/api-docs/**"),
+                                AntPathRequestMatcher.antMatcher("/dashboard.html"),
+                                AntPathRequestMatcher.antMatcher("/dashboard")
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
@@ -53,6 +60,7 @@ public class SecurityConfig {
     @Bean
     public AuthenticationEntryPoint authenticationEntryPoint() {
         return (request, response, authException) -> {
+            log.warn("401 on {} ({}): {}", request.getRequestURI(), request.getMethod(), authException.getMessage());
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
             ErrorResponse body = ErrorResponse.of(
@@ -60,7 +68,7 @@ public class SecurityConfig {
                     "Autenticação necessária",
                     request.getRequestURI()
             );
-            new ObjectMapper().writeValue(response.getOutputStream(), body);
+            objectMapper.writeValue(response.getOutputStream(), body);
         };
     }
 
