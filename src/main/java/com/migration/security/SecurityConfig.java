@@ -15,7 +15,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration
 @EnableWebSecurity
@@ -26,6 +27,19 @@ public class SecurityConfig {
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     @Bean
+    public WebMvcConfigurer corsConfigurer() {
+        return new WebMvcConfigurer() {
+            @Override
+            public void addCorsMappings(CorsRegistry registry) {
+                registry.addMapping("/api/files/**")
+                        .allowedOrigins("*")
+                        .allowedMethods("GET", "HEAD")
+                        .allowedHeaders("*");
+            }
+        };
+    }
+
+    @Bean
     public JwtAuthFilter jwtAuthFilter(JwtUtils jwtUtils) {
         return new JwtAuthFilter(jwtUtils);
     }
@@ -33,20 +47,18 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http, JwtAuthFilter jwtAuthFilter) throws Exception {
         return http
+                .cors(cors -> {})
                 .csrf(csrf -> csrf.disable())
                 .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
-                                AntPathRequestMatcher.antMatcher("/api/auth/login"),
-                                AntPathRequestMatcher.antMatcher("/api/files/**"),
-                                AntPathRequestMatcher.antMatcher("/actuator/health"),
-                                AntPathRequestMatcher.antMatcher("/h2-console/**"),
-                                AntPathRequestMatcher.antMatcher("/swagger-ui.html"),
-                                AntPathRequestMatcher.antMatcher("/swagger-ui/**"),
-                                AntPathRequestMatcher.antMatcher("/api-docs/**"),
-                                AntPathRequestMatcher.antMatcher("/dashboard.html"),
-                                AntPathRequestMatcher.antMatcher("/dashboard")
+                                "/api/auth/login",
+                                "/api/files/**",
+                                "/actuator/health",
+                                "/h2-console/**",
+                                "/dashboard.html",
+                                "/dashboard"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )

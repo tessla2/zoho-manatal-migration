@@ -42,16 +42,19 @@ public class ManatalClientService {
 
     private void throttle() {
         long now = System.currentTimeMillis();
-        long last = lastCallTime.get();
-        long elapsed = now - last;
-        if (elapsed < rateLimitMs) {
-            try {
-                Thread.sleep(rateLimitMs - elapsed);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+        lastCallTime.updateAndGet(last -> {
+            long elapsed = now - last;
+            if (elapsed < rateLimitMs) {
+                long sleepMs = rateLimitMs - elapsed;
+                try {
+                    Thread.sleep(sleepMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return System.currentTimeMillis();
             }
-        }
-        lastCallTime.set(System.currentTimeMillis());
+            return now;
+        });
     }
 
     private String normalizedBaseUrl() {

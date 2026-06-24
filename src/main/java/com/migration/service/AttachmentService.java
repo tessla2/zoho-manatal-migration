@@ -10,6 +10,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -88,26 +90,36 @@ public class AttachmentService {
         if (storedAttachmentIds == null || storedAttachmentIds.isEmpty()) return;
 
         boolean resumePosted = false;
+        Set<String> postedFileNames = new HashSet<>();
 
         for (Long attachmentId : storedAttachmentIds) {
             try {
                 String fileName = fileStorageService.getFileName(attachmentId);
                 String contentType = fileStorageService.getContentType(attachmentId);
-                String fileUrl = appBaseUrl.replaceAll("/+$", "") + "/api/files/" + attachmentId;
+                String baseUrl = appBaseUrl.replaceAll("/+$", "") + "/api/files/" + attachmentId;
+
+                if (!postedFileNames.add(fileName)) {
+                    log.info("Skipping duplicate filename for candidate {}: {}", manatalCandidateId, fileName);
+                    continue;
+                }
 
                 if (!resumePosted && isResumeFile(fileName, contentType)) {
                     ManatalResume resume = new ManatalResume();
-                    resume.setResume_file(fileUrl);
+                    resume.setResume_file(baseUrl);
                     manatalClientService.updateResume(manatalCandidateId, resume);
                     resumePosted = true;
                     log.info("Resume posted for candidate {}: {}", manatalCandidateId, fileName);
                     continue;
                 }
 
+                String encodedName = URLEncoder.encode(fileName, StandardCharsets.UTF_8);
+                String fileUrl = baseUrl + "/" + encodedName;
+
                 ManatalAttachment attachment = new ManatalAttachment();
                 attachment.setName(fileName);
                 attachment.setDescription("Migrated from Zoho");
                 attachment.setFile(fileUrl);
+                attachment.setCreator(1193857);
 
                 manatalClientService.createAttachment(manatalCandidateId, attachment);
                 log.info("Attachment posted for candidate {}: {}", manatalCandidateId, fileName);

@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
@@ -418,12 +419,12 @@ public class ZohoClientService {
         }
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Long saveAttachment(String candidateId, String attachmentId, String fileName, String fileType, String downloadUrl) {
         return saveAttachment(candidateId, null, attachmentId, fileName, fileType, downloadUrl);
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Long saveAttachment(String candidateId, String applicationId, String attachmentId, String fileName, String fileType, String downloadUrl) {
         byte[] data;
         if (downloadUrl != null && !downloadUrl.isBlank()) {

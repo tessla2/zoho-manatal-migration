@@ -14,4 +14,7 @@ public class ManatalAttachment {
 
     @Schema(description = "Public file URL", example = "https://example.com/files/123")
     private String file;
+
+    @Schema(description = "Creator ID (fixed)", example = "1193857")
+    private Integer creator;
 }

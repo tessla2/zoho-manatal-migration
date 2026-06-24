@@ -29,7 +29,7 @@ public class FileController {
         @ApiResponse(responseCode = "200", description = "File found"),
         @ApiResponse(responseCode = "404", description = "File not found", content = @Content)
     })
-    @GetMapping("/{id}")
+    @GetMapping({"/{id}", "/{id}/{filename:.+}"})
     public ResponseEntity<byte[]> serveFile(
             @Parameter(description = "Local database file ID") @PathVariable Long id) {
         byte[] data = fileStorageService.getAttachmentData(id);
@@ -37,11 +37,9 @@ public class FileController {
             return ResponseEntity.notFound().build();
         }
         String contentType = fileStorageService.getContentType(id);
-        String fileName = fileStorageService.getFileName(id);
 
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(contentType))
-                .header("Content-Disposition", "inline; filename=\"" + fileName + "\"")
                 .body(data);
     }
 }
