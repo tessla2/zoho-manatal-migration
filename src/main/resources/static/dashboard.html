@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="logo.png">
+    <title>Migração Zoho → Manatal</title>
+    <style>
+        :root {
+            --primary: #d36a38;
+            --secondary: #5c347c;
+            --accent: #f9b432;
+            --accent-light: #eb9f3e;
+            --background: #f5f3f2;
+            --surface: #ffffffc8;
+            --border: #e5e0db;
+            --text-primary: #1a1f2e;
+            --text-secondary: #6b7280;
+            --text-light: #9aa3b2;
+            --success: #16a34a;
+            --error: #dc2626;
+            --pending: #d97706;
+        }
+
+        :icon {
+            width: 1em;
+            height: 1em;
+            vertical-align: middle;
+            fill: currentColor;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--background); color: var(--text-primary); min-height: 100vh; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+
+        /* Login page — centralizado */
+        body.login-page { display: flex; align-items: center; justify-content: center; }
+        body.login-page .container { width: 100%; max-width: 420px; padding: 1.5rem; }
+        .logo-area { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; padding: 1.25rem 1.5rem; background: linear-gradient(135deg, var(--secondary), #7a4a9e); border-radius: 12px; color: #fff; }
+        .logo-placeholder { width: 80px; height: 80px; border-radius: 10px; flex-shrink: 0; object-fit: contain; }
+        .logo-text { flex: 1; }
+        .logo-text h1 { font-size: 1.25rem; font-weight: 600; color: #fff; margin: 0; }
+        .logo-text .sub { font-size: 0.75rem; color: rgba(255,255,255,0.7); margin-top: 0.15rem; }
+        .subtitle { color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+        .last-update { font-size: 0.75rem; color: var(--text-light); }
+        .card { background: var(--surface); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; border: 1px solid var(--border); backdrop-filter: blur(4px); }
+        .card-title { font-size: 0.8125rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; }
+        .card-title .badge { font-size: 0.625rem; text-transform: none; letter-spacing: 0; }
+
+        /* Login */
+        #login-form { display: flex; flex-direction: column; gap: 0.75rem; }
+        #login-form input { background: #fff; border: 1px solid var(--border); color: var(--text-primary); padding: 0.625rem 1rem; border-radius: 8px; font-size: 0.875rem; width: 100%; outline: none; }
+        #login-form input:focus { border-color: var(--secondary); }
+        #login-form button { background: var(--secondary); color: #fff; border: none; padding: 0.625rem 1.5rem; border-radius: 8px; font-size: 0.875rem; font-weight: 500; cursor: pointer; width: 100%; }
+        #login-form button:hover { background: #4e2d6b; }
+        .login-status { font-size: 0.875rem; margin-top: 0.75rem; }
+
+        /* Stats grid */
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+        .stat { background: var(--surface); border-radius: 10px; padding: 1rem 0.75rem; text-align: center; border: 1px solid var(--border); backdrop-filter: blur(4px); }
+        .stat-value { font-size: 1.75rem; font-weight: 700; line-height: 1.2; }
+        .stat-label { font-size: 0.65rem; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.25rem; }
+        .stat-total .stat-value { color: var(--text-primary); }
+        .stat-success .stat-value { color: var(--success); }
+        .stat-error .stat-value { color: var(--error); }
+        .stat-pending .stat-value { color: var(--pending); }
+        .stat-rate .stat-value { color: var(--secondary); }
+
+        /* Stacked bar */
+        .bar-chart { margin-top: 0.5rem; }
+        .bar-track { display: flex; height: 20px; border-radius: 6px; overflow: hidden; background: var(--border); }
+        .bar-success { background: var(--success); }
+        .bar-error { background: var(--error); }
+        .bar-pending { background: var(--pending); }
+        .bar-legend { display: flex; gap: 1rem; justify-content: center; margin-top: 0.35rem; font-size: 0.65rem; color: var(--text-secondary); }
+        .bar-legend span { display: flex; align-items: center; gap: 0.3rem; }
+        .bar-legend-dot { width: 6px; height: 6px; border-radius: 2px; display: inline-block; }
+
+        /* Donut */
+        .stat-donut { grid-column: span 1; display: flex; align-items: center; justify-content: center; gap: 0.75rem; padding: 0.5rem; }
+        .donut-svg { flex-shrink: 0; }
+        .donut-legend { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.65rem; color: var(--text-secondary); }
+        .donut-legend-item { display: flex; align-items: center; gap: 0.35rem; }
+        .donut-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+
+        /* Actions */
+        .actions { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+        .btn { padding: 0.625rem 1.25rem; border-radius: 8px; font-size: 0.8125rem; font-weight: 500; cursor: pointer; border: none; display: inline-flex; align-items: center; gap: 0.4rem; transition: all 0.15s; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-primary { background: var(--secondary); color: #fff; }
+        .btn-primary:hover:not(:disabled) { background: #4e2d6b; }
+        .btn-secondary { background: var(--secondary); color: #fff; }
+        .btn-secondary:hover:not(:disabled) { background: #4e2d6b; }
+        .btn-danger { background: var(--error); color: #fff; }
+        .btn-danger:hover:not(:disabled) { background: #b91c1c; }
+        .btn-success { background: var(--success); color: #fff; }
+        .btn-success:hover:not(:disabled) { background: #15803d; }
+        .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
+        .btn-ghost:hover:not(:disabled) { background: #f0eeec; color: var(--text-primary); }
+        .btn-sm { padding: 0.35rem 0.65rem; font-size: 0.7rem; }
+        .btn-xs { padding: 0.2rem 0.5rem; font-size: 0.65rem; }
+        .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear infinite; display: inline-block; }
+        .spinner-sm { width: 12px; height: 12px; border-width: 1.5px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+        th { text-align: left; color: var(--text-light); font-weight: 500; text-transform: uppercase; font-size: 0.65rem; letter-spacing: 0.05em; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); white-space: nowrap; user-select: none; }
+        th.sortable { cursor: pointer; }
+        th.sortable:hover { color: var(--secondary); }
+        th .sort-icon { margin-left: 0.25rem; opacity: 0.4; font-style: normal; }
+        th.sort-asc .sort-icon, th.sort-desc .sort-icon { opacity: 1; color: var(--secondary); }
+        th.sort-asc .sort-icon::after { content: '↑'; }
+        th.sort-desc .sort-icon::after { content: '↓'; }
+        th:not(.sort-asc):not(.sort-desc) .sort-icon::after { content: '↕'; }
+        td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); transition: background 0.1s; }
+        tbody tr { transition: background 0.1s; }
+        tbody tr:hover td { background: rgba(92,52,124,0.05); }
+        tbody tr.row-ok td:first-child { border-left: 2px solid var(--success); }
+        tbody tr.row-erro td:first-child { border-left: 2px solid var(--error); }
+        tbody tr.row-pendente td:first-child { border-left: 2px solid var(--pending); }
+        .badge { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 999px; font-size: 0.65rem; font-weight: 500; white-space: nowrap; }
+        .badge-ok { background: #f0fdf4; color: var(--success); }
+        .badge-erro { background: #fef2f2; color: var(--error); }
+        .badge-info { background: #eef2ff; color: #4f46e5; }
+        .badge-warn { background: #fffbeb; color: var(--pending); }
+        .badge-down { background: #fef2f2; color: var(--error); }
+        .badge-sim { background: #f0fdf4; color: var(--success); }
+        .badge-nao { background: #f3f4f6; color: var(--text-light); }
+
+        /* Error tooltip */
+        .error-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; position: relative; }
+        .error-cell:hover .error-tooltip { opacity: 1; visibility: visible; }
+        .error-tooltip { position: absolute; bottom: calc(100% + 6px); left: 0; background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.75rem; color: var(--text-primary); white-space: normal; word-break: break-word; max-width: 300px; z-index: 20; opacity: 0; visibility: hidden; transition: opacity 0.15s; box-shadow: 0 4px 12px rgba(0,0,0,0.08); pointer-events: none; }
+        .error-tooltip::after { content: ''; position: absolute; top: 100%; left: 12px; border: 5px solid transparent; border-top-color: var(--border); }
+
+        .tabs { display: flex; gap: 0; margin-bottom: 1rem; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; flex-wrap: wrap; background: var(--surface); }
+        .tab { padding: 0.5rem 1rem; cursor: pointer; font-size: 0.8125rem; font-weight: 500; background: transparent; color: var(--text-secondary); border: none; transition: all 0.15s; }
+        .tab.active { background: var(--secondary); color: #fff; }
+        .tab:not(:last-child) { border-right: 1px solid var(--border); }
+        .tab:not(.active):hover { background: #f0eeec; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .log-entry { padding: 0.4rem 0; border-bottom: 1px solid var(--border); font-size: 0.75rem; }
+        .log-time { color: var(--text-light); font-size: 0.65rem; }
+        .log-step { font-weight: 500; }
+        .rate-info { font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.5rem; }
+
+        .hidden { display: none !important; }
+
+        pre { background: #fff; padding: 0.75rem; border-radius: 8px; overflow-x: auto; font-size: 0.75rem; border: 1px solid var(--border); margin-top: 0.75rem; max-height: 400px; }
+
+        /* Filters */
+        .filters { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }
+        .filters input, .filters select { background: #fff; border: 1px solid var(--border); color: var(--text-primary); padding: 0.4rem 0.6rem; border-radius: 6px; font-size: 0.75rem; outline: none; }
+        .filters input:focus, .filters select:focus { border-color: var(--secondary); }
+        .filters input[type="text"] { flex: 1; min-width: 160px; }
+        .filters input[type="checkbox"] { width: auto; accent-color: var(--secondary); margin: 0; }
+        .filter-group { display: flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: var(--text-secondary); white-space: nowrap; }
+        .filter-active-badge { display: inline-flex; align-items: center; gap: 0.3rem; background: #fffbeb; color: var(--pending); border: 1px solid #fde68a; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.65rem; font-weight: 500; }
+        .filters-advanced { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; padding: 0.5rem 0.75rem; background: #fff; border-radius: 6px; border: 1px solid var(--border); margin-bottom: 0.75rem; }
+        .filters-advanced label { font-size: 0.7rem; color: var(--text-secondary); }
+        .filters-advanced input { font-size: 0.7rem; padding: 0.3rem 0.5rem; }
+        .filters-toggle { cursor: pointer; font-size: 0.7rem; color: var(--secondary); background: none; border: none; padding: 0.25rem 0; font-weight: 500; }
+        .filters-toggle:hover { text-decoration: underline; }
+
+        /* Period selector */
+        .period-selector { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 1rem; }
+        .period-btn { padding: 0.3rem 0.75rem; border-radius: 6px; font-size: 0.75rem; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); transition: all 0.15s; }
+        .period-btn:hover { border-color: var(--secondary); color: var(--secondary); }
+        .period-btn.active { background: var(--secondary); color: #fff; border-color: var(--secondary); }
+
+        /* Daily breakdown */
+        .daily-breakdown { margin-top: 1rem; }
+        .daily-breakdown td, .daily-breakdown th { padding: 0.35rem 0.6rem; }
+        .daily-bar { height: 14px; border-radius: 3px; display: inline-block; vertical-align: middle; }
+        .daily-bar-wrap { display: flex; align-items: center; gap: 0.5rem; }
+        .daily-bar-track { flex: 1; height: 14px; background: var(--border); border-radius: 3px; overflow: hidden; display: flex; }
+        .daily-bar-track .bar-success { height: 100%; }
+        .daily-bar-track .bar-error { height: 100%; }
+
+        /* Pagination */
+        .pagination { display: flex; gap: 0.5rem; align-items: center; justify-content: center; margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-secondary); flex-wrap: wrap; }
+        .pagination .info { color: var(--text-light); font-size: 0.65rem; }
+        .pagination input[type="number"] { width: 48px; background: #fff; border: 1px solid var(--border); color: var(--text-primary); padding: 0.25rem; border-radius: 4px; font-size: 0.7rem; text-align: center; outline: none; }
+        .pagination input[type="number"]:focus { border-color: var(--secondary); }
+
+        /* Health */
+        .health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; }
+        .health-item { background: var(--surface); border-radius: 10px; padding: 1rem; border: 1px solid var(--border); text-align: center; backdrop-filter: blur(4px); }
+        .health-item .label { font-size: 0.65rem; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.05em; }
+        .health-item .value { font-size: 0.9375rem; font-weight: 600; margin-top: 0.4rem; }
+
+        .status-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        .status-dot.up { background: var(--success); box-shadow: 0 0 6px rgba(22,163,74,0.4); }
+        .status-dot.down { background: var(--error); box-shadow: 0 0 6px rgba(220,38,38,0.4); }
+
+        .empty-state { text-align: center; padding: 1.5rem; color: var(--text-light); font-size: 0.8125rem; }
+        .table-container { overflow-x: auto; }
+
+        .table-loading { position: relative; min-height: 100px; }
+        .table-loading tbody { opacity: 0.4; pointer-events: none; }
+        .table-loading::after { content: ''; position: absolute; top: 50%; left: 50%; width: 24px; height: 24px; margin: -12px 0 0 -12px; border: 2px solid var(--border); border-top-color: var(--secondary); border-radius: 50%; animation: spin 0.6s linear infinite; }
+    </style>
+</head>
+<body class="login-page">
+<div class="container">
+    <div class="logo-area">
+        <img class="logo-placeholder" id="logo-img" src="logo.png" alt="Logo" onerror="this.style.display='none'">
+        <div class="logo-text">
+            <h1>Zoho → Manatal</h1>
+            <div class="sub">Painel de migração de candidatos</div>
+        </div>
+        <span class="last-update" id="last-update" style="color:rgba(255,255,255,0.5);font-size:0.7rem;flex-shrink:0"></span>
+    </div>
+
+    <!-- Login -->
+    <div class="card" id="login-card" style="backdrop-filter:blur(4px)">
+        <div class="card-title">Autenticação</div>
+        <div id="login-form">
+            <input type="text" id="username" placeholder="Username" value="admin">
+            <input type="password" id="password" placeholder="Password" value="admin123">
+            <button onclick="login()">Entrar</button>
+        </div>
+        <div class="login-status" id="login-status"></div>
+    </div>
+
+    <!-- Dashboard (hidden until login) -->
+    <div id="dashboard" class="hidden">
+
+        <!-- Stats -->
+        <div class="stats" id="stats" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr))"></div>
+
+        <!-- Actions -->
+        <div class="card" style="backdrop-filter:blur(4px)">
+            <div class="card-title">Ações</div>
+            <div class="actions">
+                <button class="btn btn-primary" id="btn-run" onclick="runBatch()">▶ Executar Batch</button>
+                <button class="btn btn-secondary" id="btn-refresh" onclick="loadDashboard()">↻ Atualizar</button>
+                <span id="action-status" style="font-size:0.8125rem;color:var(--text-secondary)"></span>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="card" style="backdrop-filter:blur(4px)">
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('report', this)">Relatório</button>
+                <button class="tab" onclick="switchTab('logs', this)">Logs</button>
+                <button class="tab" onclick="switchTab('candidatos', this)">Candidatos</button>
+                <button class="tab" onclick="switchTab('saude', this)">Saúde</button>
+                <button class="tab" onclick="switchTab('raw', this)">JSON Bruto</button>
+            </div>
+
+            <!-- Report tab -->
+            <div class="tab-content active" id="tab-report">
+                <div class="period-selector" id="period-selector">
+                    <button class="period-btn active" data-period="all" onclick="setPeriod('all')">Tudo</button>
+                    <button class="period-btn" data-period="today" onclick="setPeriod('today')">Hoje</button>
+                    <button class="period-btn" data-period="yesterday" onclick="setPeriod('yesterday')">Ontem</button>
+                    <button class="period-btn" data-period="week" onclick="setPeriod('week')">Últimos 7 dias</button>
+                    <button class="period-btn" data-period="month" onclick="setPeriod('month')">Este mês</button>
+                </div>
+                <div id="report-content"></div>
+                <div id="daily-breakdown" class="hidden"></div>
+            </div>
+
+            <!-- Logs tab -->
+            <div class="tab-content" id="tab-logs">
+                <div id="logs-content"></div>
+            </div>
+
+            <!-- Candidatos tab -->
+            <div class="tab-content" id="tab-candidatos">
+                <div class="filters">
+                    <input type="text" id="candidate-search" placeholder="Zoho ID ou Manatal ID..." oninput="debounceSearch()">
+                    <select id="status-filter" onchange="onFilterChange()">
+                        <option value="">Todos</option>
+                        <option value="PENDENTE">Pendente</option>
+                        <option value="SUCESSO">Sucesso</option>
+                        <option value="ERRO">Erro</option>
+                    </select>
+                    <label class="filter-group">
+                        <input type="checkbox" id="filter-tagged" onchange="onFilterChange()"> Tagged
+                    </label>
+                    <label class="filter-group">
+                        <input type="checkbox" id="filter-untagged" onchange="onFilterChange()"> Não tagged
+                    </label>
+                    <label class="filter-group">
+                        <input type="checkbox" id="filter-has-error" onchange="onFilterChange()"> Só com erro
+                    </label>
+                    <button class="btn-ghost btn-sm" id="btn-clear-filters" onclick="clearFilters()" style="display:none">✕ Limpar</button>
+                </div>
+                <div class="filters-advanced hidden" id="advanced-filters">
+                    <label>Erro contém: <input type="text" id="filter-error-text" oninput="onFilterChange()" style="width:120px"></label>
+                    <label>Data início: <input type="date" id="filter-date-from" onchange="onFilterChange()"></label>
+                    <label>Data fim: <input type="date" id="filter-date-to" onchange="onFilterChange()"></label>
+                    <label>Por página:
+                        <select id="page-size" onchange="candidatePage=0;renderCandidatesFromBuffer()" style="width:60px">
+                            <option value="25">25</option>
+                            <option value="50" selected>50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </label>
+                </div>
+                <button class="filters-toggle" id="advanced-toggle" onclick="toggleAdvancedFilters()">+ Mais filtros</button>
+                <div class="table-container" id="candidates-table-wrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th class="sortable" data-col="id" onclick="sortBy('id')">ID<i class="sort-icon"></i></th>
+                            <th class="sortable" data-col="zohoCandidateId" onclick="sortBy('zohoCandidateId')">Zoho ID<i class="sort-icon"></i></th>
+                            <th class="sortable" data-col="manatalCandidateId" onclick="sortBy('manatalCandidateId')">Manatal ID<i class="sort-icon"></i></th>
+                            <th class="sortable" data-col="status" onclick="sortBy('status')">Status<i class="sort-icon"></i></th>
+                            <th class="sortable" data-col="taggedInZoho" onclick="sortBy('taggedInZoho')">Marcado<i class="sort-icon"></i></th>
+                            <th>Erro</th>
+                            <th class="sortable" data-col="createdAt" onclick="sortBy('createdAt')">Criado em<i class="sort-icon"></i></th>
+                        </tr>
+                        </thead>
+                        <tbody id="candidates-body"></tbody>
+                    </table>
+                </div>
+                <div class="pagination" id="candidates-pagination"></div>
+            </div>
+
+            <!-- Saúde tab -->
+            <div class="tab-content" id="tab-saude">
+                <div id="health-content"></div>
+            </div>
+
+            <!-- Raw JSON tab -->
+            <div class="tab-content" id="tab-raw">
+                <pre id="raw-content"></pre>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    let token = null;
+    let candidatePage = 0;
+    let candidateSearchTimer = null;
+    let currentPeriod = 'all';
+
+    // Buffer local — preenchido pelo servidor, filtrado/ordenado/paginado no cliente
+    let candidateBuffer = [];
+    let sortCol = 'id';
+    let sortDir = 'asc';
+
+    function touchLastUpdate() {
+        document.getElementById('last-update').textContent = 'Última atualização: ' + new Date().toLocaleTimeString('pt-PT');
+    }
+
+    function login() {
+        const u = document.getElementById('username').value;
+        const p = document.getElementById('password').value;
+        const status = document.getElementById('login-status');
+        status.textContent = 'A autenticar...';
+        status.style.color = 'var(--text-secondary)';
+
+        fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: u, password: p })
+        })
+        .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+        .then(({ ok, data }) => {
+            if (!ok) { throw new Error(data.error || 'Erro ao autenticar'); }
+            token = data.token;
+            document.body.classList.remove('login-page');
+            document.getElementById('login-card').classList.add('hidden');
+            document.getElementById('dashboard').classList.remove('hidden');
+            touchLastUpdate();
+            loadDashboard();
+        })
+        .catch(e => {
+            status.textContent = 'Erro: ' + e.message;
+            status.style.color = 'var(--error)';
+        });
+    }
+
+    function loadDashboard() {
+        if (currentPeriod === 'all') loadReport();
+        else fetchPeriodStats(currentPeriod);
+        loadLogs();
+        if (document.getElementById('tab-candidatos').classList.contains('active')) {
+            loadCandidates();
+        }
+        if (document.getElementById('tab-saude').classList.contains('active')) {
+            loadHealth();
+        }
+        touchLastUpdate();
+    }
+
+    function loadReport() {
+        fetch('/api/batch/report', { headers: { 'Authorization': 'Bearer ' + token } })
+        .then(r => r.json())
+        .then(d => {
+            renderStats(d);
+            renderReport(d);
+            document.getElementById('raw-content').textContent = JSON.stringify(d, null, 2);
+        })
+        .catch(() => {});
+    }
+
+    function renderStats(d) {
+        const total = d.total || 0;
+        const sucesso = d.sucesso || 0;
+        const erro = d.erro || 0;
+        const pendente = d.pendente || 0;
+        const taxa = total > 0 ? ((sucesso / total) * 100).toFixed(1) : 0;
+        const periodLabel = d._period || '';
+
+        const pctSuccess = total > 0 ? (sucesso / total) * 100 : 0;
+        const pctError = total > 0 ? (erro / total) * 100 : 0;
+        const pctPending = total > 0 ? (pendente / total) * 100 : 0;
+
+        const rate = d.zohoRateLimitRemaining !== undefined
+            ? `<div class="stat stat-rate"><div class="stat-value">${d.zohoRateLimitRemaining}</div><div class="stat-label">Créditos Zoho</div></div>`
+            : '';
+
+        const donutHtml = total > 0 ? `
+            <div class="stat stat-donut">
+                <svg class="donut-svg" width="56" height="56" viewBox="0 0 36 36">
+                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--border)" stroke-width="2.5"/>
+                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--success)" stroke-width="2.5"
+                        stroke-dasharray="${sucesso} ${total - sucesso}" stroke-dashoffset="0" transform="rotate(-90 18 18)" stroke-linecap="round"/>
+                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--error)" stroke-width="2.5"
+                        stroke-dasharray="${erro} ${total - erro}" stroke-dashoffset="${-sucesso}" transform="rotate(-90 18 18)"/>
+                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--pending)" stroke-width="2.5"
+                        stroke-dasharray="${pendente} ${total - pendente}" stroke-dashoffset="${-(sucesso + erro)}" transform="rotate(-90 18 18)"/>
+                    <text x="18" y="18" text-anchor="middle" dominant-baseline="central" fill="var(--text-primary)" font-size="7" font-weight="700">${taxa}%</text>
+                </svg>
+                <div class="donut-legend">
+                    <span class="donut-legend-item"><span class="donut-dot" style="background:var(--success)"></span> ${sucesso} ok</span>
+                    <span class="donut-legend-item"><span class="donut-dot" style="background:var(--error)"></span> ${erro} err</span>
+                    <span class="donut-legend-item"><span class="donut-dot" style="background:var(--pending)"></span> ${pendente} pend</span>
+                </div>
+            </div>` : '';
+
+        const labelSuffix = periodLabel ? `<span style="font-size:0.6rem;font-weight:400;color:var(--text-light);display:block;margin-top:0.1rem">${periodLabel}</span>` : '';
+
+        document.getElementById('stats').innerHTML = `
+            <div class="stat stat-total"><div class="stat-value">${total}${labelSuffix}</div><div class="stat-label">Total</div></div>
+            <div class="stat stat-success"><div class="stat-value">${sucesso}</div><div class="stat-label">Sucesso</div></div>
+            <div class="stat stat-error"><div class="stat-value">${erro}</div><div class="stat-label">Erro</div></div>
+            <div class="stat stat-pending"><div class="stat-value">${pendente}</div><div class="stat-label">Pendente</div></div>
+            <div class="stat stat-total">
+                <div class="bar-chart">
+                    <div class="bar-track">
+                        <div class="bar-segment bar-success" style="width:${pctSuccess}%"></div>
+                        <div class="bar-segment bar-error" style="width:${pctError}%"></div>
+                        <div class="bar-segment bar-pending" style="width:${pctPending}%"></div>
+                    </div>
+                    <div class="bar-legend">
+                        <span><span class="bar-legend-dot" style="background:var(--success)"></span> ${taxa}%</span>
+                        <span><span class="bar-legend-dot" style="background:var(--error)"></span> ${erro}</span>
+                        <span><span class="bar-legend-dot" style="background:var(--pending)"></span> ${pendente}</span>
+                    </div>
+                </div>
+            </div>
+            ${donutHtml}
+            ${rate}
+        `;
+    }
+
+    function renderReport(d) {
+        let html = '';
+
+        if (d.ultimaExecucao) {
+            html += `<p style="font-size:0.8125rem;color:var(--text-secondary);margin-bottom:0.75rem;">Última execução: ${d.ultimaExecucao}</p>`;
+        }
+
+        if (d.errosPorTipo && Object.keys(d.errosPorTipo).length > 0) {
+            html += '<table><tr><th>Tipo de Erro</th><th>Quantidade</th></tr>';
+            for (const [k, v] of Object.entries(d.errosPorTipo)) {
+                html += `<tr><td>${k}</td><td>${v}</td></tr>`;
+            }
+            html += '</table>';
+        }
+
+        if (d.topErros && d.topErros.length > 0) {
+            html += '<div class="card-title" style="margin-top:0.75rem;">Top Erros</div>';
+            html += '<table><tr><th>Zoho ID</th><th>Step</th><th>Mensagem</th></tr>';
+            d.topErros.forEach(e => {
+                html += `<tr><td>${e.zohoId || '-'}</td><td>${e.step || '-'}</td><td>${e.message || '-'}</td></tr>`;
+            });
+            html += '</table>';
+        }
+
+        if (!html) html = '<p style="color:var(--text-light)">Nenhum dado disponível</p>';
+        document.getElementById('report-content').innerHTML = html;
+    }
+
+    /* Period */
+    function setPeriod(period) {
+        currentPeriod = period;
+        document.querySelectorAll('.period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === period));
+        if (period === 'all') {
+            document.getElementById('daily-breakdown').classList.add('hidden');
+            loadReport();
+        } else {
+            fetchPeriodStats(period);
+        }
+    }
+
+    function periodDateRange(period) {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        const today = `${y}-${m}-${d}`;
+
+        if (period === 'today') return { from: today, to: today };
+        if (period === 'yesterday') {
+            const yest = new Date(now); yest.setDate(yest.getDate() - 1);
+            const ys = `${yest.getFullYear()}-${String(yest.getMonth() + 1).padStart(2, '0')}-${String(yest.getDate()).padStart(2, '0')}`;
+            return { from: ys, to: ys };
+        }
+        if (period === 'week') {
+            const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 6);
+            const wa = `${weekAgo.getFullYear()}-${String(weekAgo.getMonth() + 1).padStart(2, '0')}-${String(weekAgo.getDate()).padStart(2, '0')}`;
+            return { from: wa, to: today };
+        }
+        if (period === 'month') {
+            return { from: `${y}-${m}-01`, to: today };
+        }
+        return { from: '', to: '' };
+    }
+
+    function localDateStr(isoStr) {
+        if (!isoStr || typeof isoStr !== 'string') return '';
+        return isoStr.slice(0, 10);
+    }
+
+    function fetchPeriodStats(period) {
+        const { from, to } = periodDateRange(period);
+        if (!from) return;
+
+        const statusEl = document.getElementById('action-status');
+        statusEl.innerHTML = '<span class="spinner"></span> A carregar período...';
+
+        const allPages = [];
+        function fetchPage(page) {
+            return fetch('/api/batch/candidates?page=' + page + '&size=' + SERVER_PAGE_SIZE, { headers: { 'Authorization': 'Bearer ' + token } })
+            .then(r => r.json())
+            .then(d => {
+                allPages.push(...(d.candidates || []));
+                const totalPages = d.totalPages || 1;
+                if (page + 1 < totalPages) {
+                    return fetchPage(page + 1);
+                }
+                const filtered = allPages.filter(c => {
+                    const dt = localDateStr(c.updatedAt || c.createdAt);
+                    return dt >= from && dt <= to;
+                });
+                renderPeriodStats(filtered, period, from, to);
+                statusEl.textContent = '';
+            })
+            .catch(() => {
+                statusEl.textContent = '✗ Erro ao carregar período';
+                statusEl.style.color = 'var(--error)';
+            });
+        }
+        fetchPage(0);
+    }
+
+    function renderPeriodStats(candidates, period, from, to) {
+        const total = candidates.length;
+        const sucesso = candidates.filter(c => c.status === 'SUCESSO').length;
+        const erro = candidates.filter(c => c.status === 'ERRO').length;
+        const pendente = candidates.filter(c => c.status === 'PENDENTE').length;
+
+        const periodLabel = { today: 'Hoje', yesterday: 'Ontem', week: 'Últimos 7 dias', month: 'Este mês' }[period] || period;
+        renderStats({ total, sucesso, erro, pendente, _period: `${periodLabel} (${from} a ${to})` });
+        renderDailyBreakdown(candidates);
+        renderReport({ ultimaExecucao: null, errosPorTipo: null, topErros: null });
+    }
+
+    function renderDailyBreakdown(candidates) {
+        const el = document.getElementById('daily-breakdown');
+        if (!candidates || candidates.length === 0) {
+            el.classList.add('hidden');
+            return;
+        }
+
+        const days = {};
+        candidates.forEach(c => {
+            const day = localDateStr(c.updatedAt || c.createdAt);
+            if (!day) return;
+            if (!days[day]) days[day] = { total: 0, sucesso: 0, erro: 0, pendente: 0 };
+            days[day].total++;
+            if (c.status === 'SUCESSO') days[day].sucesso++;
+            else if (c.status === 'ERRO') days[day].erro++;
+            else days[day].pendente++;
+        });
+
+        const sortedDays = Object.keys(days).sort();
+        const maxTotal = Math.max(...sortedDays.map(k => days[k].total), 1);
+
+        let html = '<div class="daily-breakdown"><div class="card-title">Por dia</div><table>';
+        html += '<tr><th>Data</th><th>Total</th><th>Sucesso</th><th>Erro</th><th>Pendente</th><th>Gráfico</th></tr>';
+        sortedDays.forEach(day => {
+            const dd = days[day];
+            const pctS = dd.total > 0 ? (dd.sucesso / maxTotal) * 100 : 0;
+            const pctE = dd.total > 0 ? (dd.erro / maxTotal) * 100 : 0;
+            const pctP = dd.total > 0 ? (dd.pendente / maxTotal) * 100 : 0;
+            const dateLabel = new Date(day + 'T00:00:00').toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' });
+            html += `<tr>
+                <td style="white-space:nowrap">${dateLabel}</td>
+                <td>${dd.total}</td>
+                <td style="color:var(--success)">${dd.sucesso}</td>
+                <td style="color:var(--error)">${dd.erro}</td>
+                <td style="color:var(--pending)">${dd.pendente}</td>
+                <td style="min-width:120px"><div class="daily-bar-track">
+                    <div class="bar-segment bar-success" style="width:${pctS}%"></div>
+                    <div class="bar-segment bar-error" style="width:${pctE}%"></div>
+                    <div class="bar-segment bar-pending" style="width:${pctP}%"></div>
+                </div></td>
+            </tr>`;
+        });
+        html += '</table></div>';
+        el.innerHTML = html;
+        el.classList.remove('hidden');
+    }
+
+    function loadLogs() {
+        fetch('/api/batch/logs', { headers: { 'Authorization': 'Bearer ' + token } })
+        .then(r => r.json())
+        .then(d => renderLogs(d))
+        .catch(() => {});
+    }
+
+    function renderLogs(logs) {
+        if (!logs || logs.length === 0) {
+            document.getElementById('logs-content').innerHTML = '<p style="color:var(--text-light)">Nenhum log registado</p>';
+            return;
+        }
+        const html = logs.slice().reverse().map(l => `
+            <div class="log-entry">
+                <div class="log-time">${l.createdAt || ''} · <span class="log-step">${l.step || ''}</span></div>
+                <div><span class="badge ${l.status === 'SUCESSO' || l.status === 'OK' ? 'badge-ok' : l.status === 'ERRO' ? 'badge-erro' : 'badge-info'}">${l.status || ''}</span> ${l.message || ''}</div>
+            </div>
+        `).join('');
+        document.getElementById('logs-content').innerHTML = html;
+    }
+
+    /* ── Candidatos ─────────────────────────────────────────────────────────── */
+
+    // Ordena o buffer e re-renderiza sem ir ao servidor
+    function sortBy(col) {
+        if (sortCol === col) {
+            sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+            sortCol = col;
+            sortDir = 'asc';
+        }
+        updateSortHeaders();
+        candidatePage = 0;
+        renderCandidatesFromBuffer();
+    }
+
+    function updateSortHeaders() {
+        document.querySelectorAll('th[data-col]').forEach(th => {
+            th.classList.remove('sort-asc', 'sort-desc');
+            if (th.dataset.col === sortCol) th.classList.add('sort-' + sortDir);
+        });
+    }
+
+    // Aplica filtros client-side, ordena e pagina a partir do buffer local
+    function renderCandidatesFromBuffer() {
+        const size = parseInt(document.getElementById('page-size').value) || 50;
+
+        // --- filtros ---
+        const filterTagged    = document.getElementById('filter-tagged').checked;
+        const filterUntagged  = document.getElementById('filter-untagged').checked;
+        const filterHasError  = document.getElementById('filter-has-error').checked;
+        const filterErrorText = document.getElementById('filter-error-text').value.trim().toLowerCase();
+        const filterDateFrom  = document.getElementById('filter-date-from').value;
+        const filterDateTo    = document.getElementById('filter-date-to').value;
+
+        let filtered = candidateBuffer.filter(c => {
+            if (filterTagged   && !c.taggedInZoho)  return false;
+            if (filterUntagged && c.taggedInZoho)   return false;
+            if (filterHasError && !c.errorMessage)  return false;
+            if (filterErrorText && (!c.errorMessage || !c.errorMessage.toLowerCase().includes(filterErrorText))) return false;
+            if (filterDateFrom && (c.updatedAt || c.createdAt) && localDateStr(c.updatedAt || c.createdAt) < filterDateFrom) return false;
+            if (filterDateTo   && (c.updatedAt || c.createdAt) && localDateStr(c.updatedAt || c.createdAt) > filterDateTo)   return false;
+            return true;
+        });
+
+        // --- ordenação ---
+        filtered.sort((a, b) => {
+            let va = a[sortCol] ?? '';
+            let vb = b[sortCol] ?? '';
+            // numérico para ids
+            if (sortCol === 'id' || sortCol === 'manatalCandidateId') {
+                const na = parseFloat(va), nb = parseFloat(vb);
+                if (!isNaN(na) && !isNaN(nb)) { va = na; vb = nb; }
+            }
+            if (va < vb) return sortDir === 'asc' ? -1 :  1;
+            if (va > vb) return sortDir === 'asc' ?  1 : -1;
+            return 0;
+        });
+
+        // --- paginação ---
+        const totalFiltered = filtered.length;
+        const totalPages    = Math.max(1, Math.ceil(totalFiltered / size));
+        if (candidatePage >= totalPages) candidatePage = totalPages - 1;
+        if (candidatePage < 0)           candidatePage = 0;
+
+        const slice = filtered.slice(candidatePage * size, candidatePage * size + size);
+        renderCandidatesTable(slice, candidatePage, totalPages, totalFiltered);
+    }
+
+    function onFilterChange() {
+        candidatePage = 0;
+        updateClearButton();
+        renderCandidatesFromBuffer();
+    }
+
+    function updateClearButton() {
+        const hasFilters = document.getElementById('filter-tagged').checked
+            || document.getElementById('filter-untagged').checked
+            || document.getElementById('filter-has-error').checked
+            || document.getElementById('filter-error-text').value.trim() !== ''
+            || document.getElementById('filter-date-from').value !== ''
+            || document.getElementById('filter-date-to').value !== '';
+        document.getElementById('btn-clear-filters').style.display = hasFilters ? '' : 'none';
+    }
+
+    function toggleAdvancedFilters() {
+        const el = document.getElementById('advanced-filters');
+        const toggle = document.getElementById('advanced-toggle');
+        const isHidden = el.classList.contains('hidden');
+        el.classList.toggle('hidden');
+        toggle.textContent = isHidden ? '− Menos filtros' : '+ Mais filtros';
+    }
+
+    function clearFilters() {
+        document.getElementById('filter-tagged').checked    = false;
+        document.getElementById('filter-untagged').checked  = false;
+        document.getElementById('filter-has-error').checked = false;
+        document.getElementById('filter-error-text').value  = '';
+        document.getElementById('filter-date-from').value   = '';
+        document.getElementById('filter-date-to').value     = '';
+        updateClearButton();
+        candidatePage = 0;
+        renderCandidatesFromBuffer();
+    }
+
+    // Vai ao servidor buscar o bloco completo (search/status do servidor), guarda no buffer
+    const SERVER_PAGE_SIZE = 500;
+
+    function loadCandidates() {
+        const search = document.getElementById('candidate-search').value;
+        const status = document.getElementById('status-filter').value;
+
+        const tableWrap = document.getElementById('candidates-table-wrap');
+        tableWrap.classList.add('table-loading');
+
+        const allPages = [];
+        function fetchPage(page) {
+            const params = new URLSearchParams({ page, size: SERVER_PAGE_SIZE });
+            if (status) params.set('status', status);
+            if (search) params.set('search', search);
+
+            return fetch('/api/batch/candidates?' + params.toString(), { headers: { 'Authorization': 'Bearer ' + token } })
+            .then(r => r.json())
+            .then(d => {
+                allPages.push(...(d.candidates || []));
+                const totalPages = d.totalPages || 1;
+                if (page + 1 < totalPages) {
+                    return fetchPage(page + 1);
+                }
+                candidateBuffer = allPages;
+                renderCandidatesFromBuffer();
+            })
+            .catch(() => {
+                document.getElementById('candidates-body').innerHTML =
+                    '<tr><td colspan="7" class="empty-state">Erro ao carregar</td></tr>';
+            })
+            .finally(() => {
+                tableWrap.classList.remove('table-loading');
+            });
+        }
+        fetchPage(0);
+    }
+
+    function renderCandidatesTable(candidates, current, pages, totalFiltered) {
+        const size       = parseInt(document.getElementById('page-size').value) || 50;
+        const tbody      = document.getElementById('candidates-body');
+        const pagination = document.getElementById('candidates-pagination');
+
+        if (candidates.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Nenhum candidato encontrado</td></tr>';
+            pagination.innerHTML = '';
+            return;
+        }
+
+        const from = current * size + 1;
+        const to   = from + candidates.length - 1;
+
+        tbody.innerHTML = candidates.map(c => {
+            const rowClass    = c.status === 'SUCESSO' ? 'row-ok' : c.status === 'ERRO' ? 'row-erro' : c.status === 'PENDENTE' ? 'row-pendente' : '';
+            const statusClass = c.status === 'SUCESSO' ? 'badge-ok' : c.status === 'ERRO' ? 'badge-erro' : c.status === 'PENDENTE' ? 'badge-warn' : 'badge-info';
+            const taggedClass = c.taggedInZoho ? 'badge-sim' : 'badge-nao';
+            const taggedText  = c.taggedInZoho ? 'Sim' : 'Não';
+            const errorText   = c.errorMessage || '';
+            const errorDisplay= errorText
+                ? `<div class="error-cell">${errorText}<div class="error-tooltip">${errorText}</div></div>`
+                : '<span style="color:var(--text-light)">-</span>';
+            const created = c.createdAt && typeof c.createdAt === 'string'
+                ? c.createdAt.slice(0, 10) + ' ' + (c.createdAt.slice(11, 19) || '')
+                : '-';
+            return `<tr class="${rowClass}">
+                <td style="color:var(--text-light)">${c.id}</td>
+                <td><code style="color:var(--text-secondary);font-size:0.7rem">${c.zohoCandidateId || '-'}</code></td>
+                <td><code style="color:var(--text-secondary);font-size:0.7rem">${c.manatalCandidateId || '-'}</code></td>
+                <td><span class="badge ${statusClass}">${c.status || '-'}</span></td>
+                <td><span class="badge ${taggedClass}">${taggedText}</span></td>
+                <td>${errorDisplay}</td>
+                <td style="color:var(--text-light);font-size:0.7rem;white-space:nowrap">${created}</td>
+            </tr>`;
+        }).join('');
+
+        const prevDisabled = current <= 0;
+        const nextDisabled = current >= pages - 1;
+
+        pagination.innerHTML = `
+            <button class="btn btn-secondary btn-xs" onclick="candidatePage=${current-1};renderCandidatesFromBuffer()" ${prevDisabled ? 'disabled' : ''}>←</button>
+            <span>${current + 1} / ${pages || '?'}</span>
+            <button class="btn btn-secondary btn-xs" onclick="candidatePage=${current+1};renderCandidatesFromBuffer()" ${nextDisabled ? 'disabled' : ''}>→</button>
+            <span class="info">${from}–${to} de ${totalFiltered}</span>
+            <label style="display:flex;align-items:center;gap:0.25rem;font-size:0.65rem;color:var(--text-light)">
+                Ir pág.
+                <input type="number" min="1" max="${pages || 1}" value="${current + 1}"
+                    onkeydown="if(event.key==='Enter'){const v=parseInt(this.value);if(v>=1&&v<=${pages||1}){candidatePage=v-1;renderCandidatesFromBuffer();}}"
+                    onblur="this.value=${current + 1}">
+            </label>
+        `;
+    }
+
+    function debounceSearch() {
+        clearTimeout(candidateSearchTimer);
+        candidateSearchTimer = setTimeout(() => { candidatePage = 0; loadCandidates(); }, 300);
+    }
+
+    /* Saúde */
+    function loadHealth() {
+        fetch('/api/health', { headers: { 'Authorization': 'Bearer ' + token } })
+        .then(r => r.json())
+        .then(d => renderHealth(d))
+        .catch(() => {
+            document.getElementById('health-content').innerHTML = '<p style="color:var(--error)">Erro ao carregar dados de saúde</p>';
+        });
+    }
+
+    function renderHealth(d) {
+        const zohoUp = d.zoho === 'UP';
+        const manatalUp = d.manatal === 'UP';
+        const dbUp = d.db === 'UP';
+
+        const overall = d.status || (zohoUp && manatalUp && dbUp ? 'UP' : 'DEGRADED');
+        const overallDot = overall === 'UP' ? 'up' : 'down';
+        const overallClass = overall === 'UP' ? 'badge-ok' : 'badge-erro';
+        const zohoCredits = d.zohoRateLimitRemaining !== null && d.zohoRateLimitRemaining !== undefined
+            ? `<p style="font-size:0.75rem;color:var(--text-secondary);margin-top:0.5rem;">Créditos restantes: ${d.zohoRateLimitRemaining}</p>` : '';
+
+        document.getElementById('health-content').innerHTML = `
+            <div class="status-row">
+                <span class="status-dot ${overallDot}"></span>
+                <span class="badge ${overallClass}" style="font-size:0.8125rem;">${overall}</span>
+                <span style="color:var(--text-secondary);font-size:0.8125rem;">${d.uptime || ''}</span>
+            </div>
+            <div class="health-grid">
+                <div class="health-item">
+                    <div class="label">Zoho Recruit</div>
+                    <div class="value"><span class="badge ${zohoUp ? 'badge-ok' : 'badge-down'}">${d.zoho || 'DOWN'}</span></div>
+                    ${zohoCredits}
+                </div>
+                <div class="health-item">
+                    <div class="label">Manatal</div>
+                    <div class="value"><span class="badge ${manatalUp ? 'badge-ok' : 'badge-down'}">${d.manatal || 'DOWN'}</span></div>
+                </div>
+                <div class="health-item">
+                    <div class="label">Base de Dados</div>
+                    <div class="value"><span class="badge ${dbUp ? 'badge-ok' : 'badge-down'}">${d.db || 'DOWN'}</span></div>
+                </div>
+                <div class="health-item">
+                    <div class="label">Uptime</div>
+                    <div class="value" style="font-size:0.8125rem;color:var(--text-secondary)">${d.uptime || '-'}</div>
+                </div>
+            </div>
+        `;
+    }
+
+    function runBatch() {
+        const btn = document.getElementById('btn-run');
+        const status = document.getElementById('action-status');
+        btn.disabled = true;
+        status.innerHTML = '<span class="spinner"></span> A executar...';
+
+        fetch('/api/batch/run', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+        })
+        .then(r => r.text())
+        .then(msg => {
+            status.textContent = '✓ ' + msg;
+            setTimeout(() => { loadDashboard(); status.textContent = ''; }, 1000);
+        })
+        .catch(e => {
+            status.textContent = '✗ Erro: ' + e.message;
+            status.style.color = 'var(--error)';
+        })
+        .finally(() => { btn.disabled = false; });
+    }
+
+    function switchTab(name, btn) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        btn.classList.add('active');
+        const tab = document.getElementById('tab-' + name);
+        tab.classList.add('active');
+
+        if (name === 'report') {
+            if (currentPeriod === 'all') loadReport();
+            else fetchPeriodStats(currentPeriod);
+        }
+        if (name === 'candidatos') loadCandidates();
+        if (name === 'saude') loadHealth();
+        if (name === 'raw') loadReport();
+    }
+
+    // Auto-refresh every 30s
+    setInterval(() => {
+        if (token) {
+            touchLastUpdate();
+            loadDashboard();
+        }
+    }, 30000);
+</script>
+</body>
+</html>
