@@ -2,7 +2,7 @@ spring:
   application:
     name: zoho-manatal-migration
 
-    # DB H2 to save state data from Spring Batch
+
     datasource:
         url: jdbc:h2:file:./migration-state;DB_CLOSE_ON_EXIT=FALSE
         driver-class-name: com.mysql.cj.jdbc.Driver
@@ -11,12 +11,12 @@ spring:
 
     h2:
       console:
-        enabled: true            # http://localhost:8080/h2-console
+        enabled: true      
         path: /h2-console
 
     batch:
       job:
-        enabled: false              # Disable auto-run of jobs on startup
+        enabled: false           
       jdbc:
         initialize-schema: always   # Initialize Spring Batch schema on startup
 
@@ -46,7 +46,6 @@ migration:
       to: ${ALERT_EMAIL_TO:}
       from: ${ALERT_EMAIL_FROM:migration@company.com}
 
-    # Actuator — dashboard progress
     management:
       endpoints:
         web:
