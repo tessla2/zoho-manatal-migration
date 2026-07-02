@@ -52,4 +52,10 @@ public class FileStorageService {
         if (attachment == null) return "unknown";
         return attachment.getFileName();
     }
+
+    public Long getFileSize(Long id) {
+        StoredAttachment attachment = getAttachment(id);
+        if (attachment == null) return 0L;
+        return attachment.getFileSize() != null ? attachment.getFileSize() : 0L;
+    }
 }

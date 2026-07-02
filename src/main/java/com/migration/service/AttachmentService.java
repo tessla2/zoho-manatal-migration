@@ -16,17 +16,20 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AttachmentService {
 
+    private static final long MANATAL_MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
     private final ZohoClientService zohoClientService;
     private final ManatalClientService manatalClientService;
     private final FileStorageService fileStorageService;
 
-    @Value("${migration.app.base-url}")
+    @Value("${migration.app.base-url:http://localhost:8080}")
     private String appBaseUrl;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -85,33 +88,58 @@ public class AttachmentService {
         return ids;
     }
 
-    @Async("attachmentExecutor")
-    public void postToManatal(String manatalCandidateId, List<Long> storedAttachmentIds) {
-        if (storedAttachmentIds == null || storedAttachmentIds.isEmpty()) return;
+    public boolean postResumeSync(String manatalCandidateId, List<Long> storedAttachmentIds) {
+        if (storedAttachmentIds == null || storedAttachmentIds.isEmpty()) return false;
 
-        boolean resumePosted = false;
+        for (Long attachmentId : storedAttachmentIds) {
+            String fileName = fileStorageService.getFileName(attachmentId);
+            String contentType = fileStorageService.getContentType(attachmentId);
+
+            if (isResumeFile(fileName, contentType)) {
+                long fileSize = fileStorageService.getFileSize(attachmentId);
+                if (fileSize > MANATAL_MAX_FILE_SIZE) {
+                    log.warn("FILESIZE_EXCEEDED candidate {} ficheiro {} ({} bytes) excede 5MB do Manatal, a enviar mesmo assim", manatalCandidateId, fileName, fileSize);
+                }
+                String baseUrl = appBaseUrl.replaceAll("/+$", "") + "/api/files/" + attachmentId;
+                ManatalResume resume = new ManatalResume();
+                resume.setResume_file(baseUrl);
+                manatalClientService.updateResume(manatalCandidateId, resume);
+                log.info("Resume posted for candidate {}: {}", manatalCandidateId, fileName);
+                return true;
+            }
+        }
+        log.warn("No resume file found for candidate {} among {} stored attachments", manatalCandidateId,
+                storedAttachmentIds != null ? storedAttachmentIds.size() : 0);
+        return false;
+    }
+
+    @Async("attachmentExecutor")
+    public CompletableFuture<Void> postToManatal(String manatalCandidateId, List<Long> storedAttachmentIds) {
+        if (storedAttachmentIds == null || storedAttachmentIds.isEmpty())
+            return CompletableFuture.completedFuture(null);
+
         Set<String> postedFileNames = new HashSet<>();
 
         for (Long attachmentId : storedAttachmentIds) {
             try {
                 String fileName = fileStorageService.getFileName(attachmentId);
                 String contentType = fileStorageService.getContentType(attachmentId);
-                String baseUrl = appBaseUrl.replaceAll("/+$", "") + "/api/files/" + attachmentId;
 
                 if (!postedFileNames.add(fileName)) {
                     log.info("Skipping duplicate filename for candidate {}: {}", manatalCandidateId, fileName);
                     continue;
                 }
 
-                if (!resumePosted && isResumeFile(fileName, contentType)) {
-                    ManatalResume resume = new ManatalResume();
-                    resume.setResume_file(baseUrl);
-                    manatalClientService.updateResume(manatalCandidateId, resume);
-                    resumePosted = true;
-                    log.info("Resume posted for candidate {}: {}", manatalCandidateId, fileName);
+                if (isResumeFile(fileName, contentType)) {
                     continue;
                 }
 
+                long fileSize = fileStorageService.getFileSize(attachmentId);
+                if (fileSize > MANATAL_MAX_FILE_SIZE) {
+                    log.warn("FILESIZE_EXCEEDED candidate {} attachment {} ({} bytes) excede 5MB do Manatal, a enviar mesmo assim", manatalCandidateId, fileName, fileSize);
+                }
+
+                String baseUrl = appBaseUrl.replaceAll("/+$", "") + "/api/files/" + attachmentId;
                 String encodedName = URLEncoder.encode(fileName, StandardCharsets.UTF_8);
                 String fileUrl = baseUrl + "/" + encodedName;
 
@@ -127,13 +155,23 @@ public class AttachmentService {
                 log.warn("Failed to post attachment {} for candidate {}: {}", attachmentId, manatalCandidateId, e.getMessage());
             }
         }
+        return CompletableFuture.completedFuture(null);
     }
 
     private boolean isResumeFile(String fileName, String contentType) {
         if (fileName == null) return false;
         String lower = fileName.toLowerCase();
-        return lower.endsWith(".pdf") || lower.endsWith(".doc") || lower.endsWith(".docx")
+        if (lower.endsWith(".pdf") || lower.endsWith(".doc") || lower.endsWith(".docx")
                 || lower.endsWith(".rtf") || lower.endsWith(".txt")
-                || contentType.contains("pdf") || contentType.contains("document");
+                || lower.endsWith(".odt") || lower.endsWith(".dot") || lower.endsWith(".dotx")
+                || lower.endsWith(".pages") || lower.endsWith(".tex"))
+            return true;
+        if (contentType != null && (contentType.contains("pdf") || contentType.contains("document")
+                || contentType.contains("word") || contentType.contains("opendocument")))
+            return true;
+        if (lower.contains("cv") || lower.contains("resume") || lower.contains("curriculo")
+                || lower.contains("curriculum") || lower.contains("bio"))
+            return true;
+        return false;
     }
 }

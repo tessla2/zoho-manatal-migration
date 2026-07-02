@@ -22,6 +22,7 @@ import java.time.Instant;
 public class ZohoAuthService {
 
     private final ZohoProperties properties;
+    private final HttpClient client;
     private final ObjectMapper mapper = new ObjectMapper();
 
     private String cachedToken;
@@ -69,10 +70,6 @@ public class ZohoAuthService {
                 )
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
-
-        // Cria um cliente HTTP
-        // Ele será responsável por enviar a request
-        HttpClient client = HttpClient.newHttpClient();
 
         // Envia a requisição para o servidor
         // e espera a resposta

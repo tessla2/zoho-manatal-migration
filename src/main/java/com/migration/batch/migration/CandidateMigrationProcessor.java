@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migration.entity.CandidateMigration;
 import com.migration.model.ManatalCandidate;
+import com.migration.service.AttachmentService;
 import com.migration.service.ZohoClientService;
 import com.migration.transform.CandidateMapper;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,7 @@ public class CandidateMigrationProcessor implements ItemProcessor<CandidateMigra
 
     private final ZohoClientService zohoClientService;
     private final CandidateMapper candidateMapper;
+    private final AttachmentService attachmentService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final AtomicInteger processedCount = new AtomicInteger(0);
@@ -68,7 +70,7 @@ public class CandidateMigrationProcessor implements ItemProcessor<CandidateMigra
             List<String> interviewNotes = fetchRealInterviews(item.getZohoCandidateId());
             pkg.setInterviewNotes(interviewNotes);
 
-            fetchApplicationsAndAttachments(item.getZohoCandidateId(), pkg);
+            fetchApplicationsAndAttachments(item.getZohoCandidateId(), zohoData, pkg);
             pkg.getCandidateMigration().setApplicationId(pkg.getApplicationId());
 
             return pkg;
@@ -79,32 +81,46 @@ public class CandidateMigrationProcessor implements ItemProcessor<CandidateMigra
         }
     }
 
-    private void fetchApplicationsAndAttachments(String zohoCandidateId, CandidateMigrationPackage pkg) {
+    private void fetchApplicationsAndAttachments(String zohoCandidateId, JsonNode zohoData, CandidateMigrationPackage pkg) {
+        List<Long> storedIds = new ArrayList<>();
+        try {
+            String candidateAttachmentsJson = zohoClientService.listCandidateAttachments(zohoCandidateId);
+            storedIds.addAll(processAttachments(zohoCandidateId, null, candidateAttachmentsJson));
+        } catch (Exception e) {
+            log.warn("Could not fetch candidate attachments for {}: {}", zohoCandidateId, e.getMessage());
+        }
+
         try {
             String appsJson = zohoClientService.listApplicationsByCandidate(zohoCandidateId);
             JsonNode appsData = objectMapper.readTree(appsJson).path("data");
-            if (appsData.isEmpty()) {
-                log.warn("No applications found for candidate {}", zohoCandidateId);
-                return;
-            }
+            if (!appsData.isEmpty()) {
+                String applicationId = appsData.get(0).path("id").asText();
+                pkg.setApplicationId(applicationId);
+                log.info("Found application {} for candidate {}", applicationId, zohoCandidateId);
 
-            String applicationId = appsData.get(0).path("id").asText();
-            pkg.setApplicationId(applicationId);
-            log.info("Found application {} for candidate {}", applicationId, zohoCandidateId);
-
-            List<Long> storedIds = new ArrayList<>();
-
-            String candidateAttachmentsJson = zohoClientService.listCandidateAttachments(zohoCandidateId);
-            storedIds.addAll(processAttachments(zohoCandidateId, null, candidateAttachmentsJson));
-
-            String appAttachmentsJson = zohoClientService.listApplicationAttachments(applicationId);
-            storedIds.addAll(processAttachments(zohoCandidateId, applicationId, appAttachmentsJson));
-
-            if (!storedIds.isEmpty()) {
-                pkg.setStoredAttachmentIds(storedIds);
+                String appAttachmentsJson = zohoClientService.listApplicationAttachments(applicationId);
+                storedIds.addAll(processAttachments(zohoCandidateId, applicationId, appAttachmentsJson));
             }
         } catch (Exception e) {
-            log.warn("Could not fetch attachments for candidate {}: {}", zohoCandidateId, e.getMessage());
+            log.warn("Could not fetch applications/attachments for candidate {}: {}", zohoCandidateId, e.getMessage());
+        }
+
+        try {
+            String resumeUrl = zohoData.path("$resume_url").asText(null);
+            if (resumeUrl != null && !resumeUrl.isBlank()) {
+                String fileName = zohoData.path("Resume_title").asText("resume.pdf");
+                Long resumeId = zohoClientService.downloadAndStoreResume(zohoCandidateId, resumeUrl, fileName);
+                if (resumeId != null) {
+                    storedIds.add(resumeId);
+                    log.info("Downloaded resume from resume_url for candidate {}: stored id {}", zohoCandidateId, resumeId);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not fetch resume_url for candidate {}: {}", zohoCandidateId, e.getMessage());
+        }
+
+        if (!storedIds.isEmpty()) {
+            pkg.setStoredAttachmentIds(storedIds);
         }
     }
 

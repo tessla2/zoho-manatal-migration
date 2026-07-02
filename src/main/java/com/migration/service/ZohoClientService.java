@@ -37,6 +37,10 @@ public class ZohoClientService {
 
     private final java.util.concurrent.atomic.AtomicInteger zohoRateLimitRemaining = new java.util.concurrent.atomic.AtomicInteger(-1);
     private final java.util.concurrent.atomic.AtomicInteger zohoRateLimitLimit = new java.util.concurrent.atomic.AtomicInteger(-1);
+    private final java.util.concurrent.atomic.AtomicLong zohoLastCallTime = new java.util.concurrent.atomic.AtomicLong(0);
+
+    @org.springframework.beans.factory.annotation.Value("${migration.zoho.rate-limit-ms:800}")
+    private long zohoRateLimitMs;
 
     private int zohoRateLimitThreshold = 100;
     private int zohoRateLimitCriticalThreshold = 20;
@@ -111,7 +115,26 @@ public class ZohoClientService {
     }
 
     //  Candidates //
+    void throttleZoho() {
+        synchronized (zohoLastCallTime) {
+            long now = System.currentTimeMillis();
+            long nextAllowed = zohoLastCallTime.get();
+            if (now < nextAllowed) {
+                long sleepMs = nextAllowed - now;
+                try {
+                    Thread.sleep(sleepMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                now = System.currentTimeMillis();
+            }
+            zohoLastCallTime.set(now + zohoRateLimitMs);
+        }
+    }
+
     public String listCandidates(int page, int perPage) {
+        throttleZoho();
         try {
             String token = authService.generateAccessToken();
             String url = properties.baseUrl() + "/Candidates?page=" + page + "&per_page=" + perPage;
@@ -145,6 +168,7 @@ public class ZohoClientService {
     }
 
     public String fetchCandidateById(String candidateId) {
+        throttleZoho();
         try {
             String token = authService.generateAccessToken();
             String url = properties.baseUrl() + "/Candidates/" + candidateId;
@@ -180,6 +204,7 @@ public class ZohoClientService {
     }
 
     public String fetchOneCandidate() {
+        throttleZoho();
         try {
             String token = authService.generateAccessToken();
             String url = properties.baseUrl() + "/Candidates?page=1&per_page=10";
@@ -215,6 +240,7 @@ public class ZohoClientService {
     }
 
     public String searchCandidates(String criteria, int page, int perPage) {
+        throttleZoho();
         try {
             String token = authService.generateAccessToken();
             String url = properties.baseUrl() + "/Candidates/search?criteria="
@@ -268,6 +294,7 @@ public class ZohoClientService {
     // Attachments //
 
     public String listCandidateAttachments(String candidateId) {
+        throttleZoho();
         try {
             String token = authService.generateAccessToken();
             String url = properties.baseUrl() + "/Candidates/" + candidateId + "/Attachments";
@@ -303,6 +330,7 @@ public class ZohoClientService {
 
 
     public byte[] downloadAttachment(String candidateId, String attachmentId) {
+        throttleZoho();
         try {
             String token = authService.generateAccessToken();
             String url = properties.baseUrl() + "/Candidates/" + candidateId + "/Attachments/" + attachmentId;
@@ -343,6 +371,7 @@ public class ZohoClientService {
 
 
     public byte[] downloadApplicationAttachment(String applicationId, String attachmentId) {
+        throttleZoho();
         try {
             String token = authService.generateAccessToken();
             String url = properties.baseUrl() + "/Applications/" + applicationId + "/Attachments/" + attachmentId;
@@ -382,6 +411,7 @@ public class ZohoClientService {
     }
 
     public byte[] downloadAttachmentFromUrl(String downloadUrl) {
+        throttleZoho();
         try {
             String token = authService.generateAccessToken();
 
@@ -416,6 +446,33 @@ public class ZohoClientService {
         } catch (IOException | InterruptedException e) {
             log.error("Erro ao baixar anexo de URL: {}", e.getMessage(), e);
             throw ApiException.badGateway("Falha ao baixar anexo do Zoho");
+        }
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Long downloadAndStoreResume(String candidateId, String resumeUrl, String fileName) {
+        try {
+            byte[] data = downloadAttachmentFromUrl(resumeUrl);
+            if (data.length == 0) {
+                log.warn("Resume URL {} returned empty data for candidate {}", resumeUrl, candidateId);
+                return null;
+            }
+
+            StoredAttachment attachment = new StoredAttachment();
+            attachment.setZohoAttachmentId("resume_" + candidateId);
+            attachment.setCandidateId(candidateId);
+            attachment.setFileName(fileName);
+            attachment.setFileType("application/pdf");
+            attachment.setFileSize((long) data.length);
+            attachment.setData(data);
+            attachment.setCreatedAt(LocalDateTime.now());
+
+            storedAttachmentRepository.save(attachment);
+            log.info("Resume saved to DB with id: {}", attachment.getId());
+            return attachment.getId();
+        } catch (Exception e) {
+            log.error("Failed to download/store resume from URL {}: {}", resumeUrl, e.getMessage());
+            return null;
         }
     }
 
@@ -456,6 +513,7 @@ public class ZohoClientService {
 
     // Interviews //
     public String fetchOneInterview() {
+        throttleZoho();
         try {
             String token = authService.generateAccessToken();
             String url = properties.baseUrl() + "/Interviews?page=1&per_page=1";
@@ -490,6 +548,7 @@ public class ZohoClientService {
 
     // Tags //
     public String listTags(String module) {
+        throttleZoho();
         try {
             String token = authService.generateAccessToken();
             String url = properties.baseUrl() + "/settings/tags?module=" + module;
@@ -528,6 +587,7 @@ public class ZohoClientService {
     }
 
     public void tagCandidateWithTag(String candidateId, String tagName) {
+        throttleZoho();
         try {
             String token = authService.generateAccessToken();
             String url = properties.baseUrl() + "/Candidates/" + candidateId + "/actions/add_tags?tag_names="
@@ -561,6 +621,7 @@ public class ZohoClientService {
     }
 
     public void removeTagFromCandidate(String candidateId, String tagName) {
+        throttleZoho();
         try {
             String token = authService.generateAccessToken();
             String url = properties.baseUrl() + "/Candidates/" + candidateId + "/actions/remove_tags?tag_names="
@@ -595,6 +656,7 @@ public class ZohoClientService {
 
     // Notes //
     public String fetchCandidateNotes(String candidateId) {
+        throttleZoho();
         try {
             String token = authService.generateAccessToken();
             String url = properties.baseUrl() + "/Candidates/" + candidateId + "/Notes";
@@ -629,6 +691,7 @@ public class ZohoClientService {
 
     // Interviews //
     public String fetchInterviewsByCandidate(String candidateId) {
+        throttleZoho();
         try {
             String token = authService.generateAccessToken();
             String url = properties.baseUrl() + "/Candidates/" + candidateId + "/Interviews";
@@ -663,6 +726,7 @@ public class ZohoClientService {
 
     // Applications //
     public String fetchOneApplication() {
+        throttleZoho();
         try {
             String token = authService.generateAccessToken();
             String url = properties.baseUrl() + "/Applications?page=1&per_page=1";
@@ -695,6 +759,7 @@ public class ZohoClientService {
     }
 
     public String listApplicationsByCandidate(String candidateId) {
+        throttleZoho();
         try {
             String token = authService.generateAccessToken();
             String url = properties.baseUrl() + "/Candidates/" + candidateId + "/Applications";
@@ -729,6 +794,7 @@ public class ZohoClientService {
     }
 
     public String listApplicationAttachments(String applicationId) {
+        throttleZoho();
         try {
             String token = authService.generateAccessToken();
             String url = properties.baseUrl() + "/Applications/" + applicationId + "/Attachments";

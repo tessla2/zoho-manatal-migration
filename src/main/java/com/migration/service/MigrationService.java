@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @Service
@@ -80,6 +81,16 @@ public class MigrationService {
                     manatalClientService.createNote(manatalId, noteInfo);
                 }
             }
+        } catch (ApiException e) {
+            if (e.getMessage() != null && e.getMessage().contains("429")) {
+                log.warn("RATE_LIMIT_429 ao postar notas para candidate {}: {}", candidateId, e.getMessage());
+            } else {
+                log.warn("Failed to post notes for candidate {}: {}", candidateId, e.getMessage());
+            }
+            String noteInfo = candidateMapper.extractNoteInfo(zohoData);
+            if (noteInfo != null) {
+                manatalClientService.createNote(manatalId, noteInfo);
+            }
         } catch (Exception e) {
             log.warn("Failed to post notes for candidate {}: {}", candidateId, e.getMessage());
             String noteInfo = candidateMapper.extractNoteInfo(zohoData);
@@ -107,7 +118,11 @@ public class MigrationService {
         try {
             String applicationId = fetchApplicationId(candidateId);
             List<Long> storedIds = attachmentService.downloadAndStore(candidateId, applicationId);
-            attachmentService.postToManatal(manatalId, storedIds);
+            if (storedIds != null && !storedIds.isEmpty()) {
+                attachmentService.postResumeSync(manatalId, storedIds);
+                CompletableFuture<Void> future = attachmentService.postToManatal(manatalId, storedIds);
+                future.join();
+            }
         } catch (Exception e) {
             log.warn("Failed to post attachments for candidate {}: {}", candidateId, e.getMessage());
         }

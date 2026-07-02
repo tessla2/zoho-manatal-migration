@@ -58,7 +58,12 @@ public class SecurityConfig {
                                 "/actuator/health",
                                 "/h2-console/**",
                                 "/dashboard.html",
-                                "/dashboard"
+                                "/dashboard",
+                                "/logo.png",
+                                "/favicon.ico",
+                                "/*.png",
+                                "/*.ico",
+                                "/*.svg"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
